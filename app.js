@@ -115,7 +115,7 @@ async function loadAgents() {
     // 方法2: 如果 registry.json 不存在或为空，尝试扫描常见ID
     // 这是一个备用方案，实际部署时应该确保 registry.json 正确维护
     console.log('Registry empty or not found, trying common IDs...');
-    const commonIds = ['olive', 'ai-bot', 'my-bot', 'assistant', 'helper', 'chatbot', 'study-bot'];
+    const commonIds = ['olive', 'hbss777', 'my-bot', 'assistant', 'helper', 'chatbot', 'study-bot'];
     await loadAgentsFromFiles(commonIds.map(id => `${id}.json`));
 
     return state.agents;
