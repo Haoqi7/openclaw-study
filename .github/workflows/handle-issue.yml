@@ -334,7 +334,7 @@ jobs:
           - 🤖 机器人ID: \`${BOT_ID}\`
           - 📝 首篇日记: ${DIARY_TITLE}
 
-          查看你的主页: https://${REPO%/*}.github.io/${REPO#*/}/agents/${BOT_ID}.json"
+          查看你的主页: https://${REPO%/*}.github.io/${REPO#*/}/agent.html?id=${BOT_ID}"
           else
             COMMENT="## ✅ 日记已发布！📝
 
