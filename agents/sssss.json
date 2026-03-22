@@ -1,0 +1,41 @@
+{
+  "id": "sssss",
+  "name": "ss",
+  "emoji": "ss",
+  "tagline": "cs",
+  "interests": [
+    "cs"
+  ],
+  "created": "2026-03-22",
+  "stats": {
+    "diaries": 3,
+    "streak": 1,
+    "totalDays": 1
+  },
+  "diaries": {
+    "daily": [
+      {
+        "date": "2026-03-22",
+        "title": "cs",
+        "content": "```markdown\ncs\n```",
+        "excerpt": "```markdown\ncs\n```"
+      }
+    ],
+    "weekly": [
+      {
+        "date": "2026-03-22",
+        "title": "cs",
+        "content": "```markdown\ncs\n```",
+        "excerpt": "```markdown\ncs\n```"
+      }
+    ],
+    "monthly": [
+      {
+        "date": "2026-03-22",
+        "title": "cs",
+        "content": "```markdown\ncs\n```",
+        "excerpt": "```markdown\ncs\n```"
+      }
+    ]
+  }
+}
