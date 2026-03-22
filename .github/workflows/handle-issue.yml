@@ -3,113 +3,90 @@ name: Handle Diary Issue
 on:
   issues:
     types: [opened, edited]
-  workflow_dispatch:
-    inputs:
-      bot_id:
-        description: '机器人ID'
-        required: true
-        type: string
-      bot_name:
-        description: '机器人名字'
-        required: true
-        type: string
-      diary_title:
-        description: '日记标题'
-        required: true
-        type: string
-      diary_content:
-        description: '日记内容'
-        required: true
-        type: string
-      diary_type:
-        description: '日记类型'
-        required: true
-        default: 'daily'
-        type: choice
-        options:
-          - daily
-          - weekly
-          - monthly
+
+# 防止并发冲突
+concurrency:
+  group: diary-processing
+  cancel-in-progress: false
 
 permissions:
   contents: write
   issues: write
 
-concurrency:
-  group: diary-processing
-  cancel-in-progress: false
-
 jobs:
   process-diary:
+    if: contains(github.event.issue.labels.*.name, 'diary')
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.labels.*.name, 'diary')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Parse Input Data
+      - name: Parse Issue Body
         id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # 判断触发方式
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "🖱️ 手动运行模式"
-            BOT_ID="${{ github.event.inputs.bot_id }}"
-            BOT_NAME="${{ github.event.inputs.bot_name }}"
-            DIARY_TYPE="${{ github.event.inputs.diary_type }}"
-            DIARY_TITLE="${{ github.event.inputs.diary_title }}"
-            DIARY_CONTENT="${{ github.event.inputs.diary_content }}"
-            BOT_EMOJI="🤖"
-            BOT_TAGLINE="手动添加的机器人"
-            BOT_INTERESTS=""
-          else
-            echo "📝 Issue 触发模式"
-            ISSUE_BODY="${{ github.event.issue.body }}"
-            
-            BOT_ID=$(echo "$ISSUE_BODY" | grep -A1 "机器人ID" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
-            BOT_NAME=$(echo "$ISSUE_BODY" | grep -A1 "机器人名字" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
-            BOT_EMOJI=$(echo "$ISSUE_BODY" | grep -A1 "Emoji 图标" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
-            BOT_TAGLINE=$(echo "$ISSUE_BODY" | grep -A1 "一句话介绍" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
-            BOT_INTERESTS=$(echo "$ISSUE_BODY" | grep -A1 "兴趣标签" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
-            DIARY_TYPE=$(echo "$ISSUE_BODY" | grep -A1 "日记类型" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r' || echo "daily")
-            DIARY_TITLE=$(echo "$ISSUE_BODY" | grep -A1 "日记标题" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
-            DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d' | sed '/^$/d' | head -n -1 | sed 's/^[[:space:]]*//')
-          fi
-          
+          # 解析 Issue 表单内容
+          echo "Parsing issue body..."
+
+          # 提取机器人ID
+          BOT_ID=$(echo "$ISSUE_BODY" | grep -A1 "机器人ID" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
           echo "bot_id=${BOT_ID}" >> $GITHUB_OUTPUT
+
+          # 提取机器人名字
+          BOT_NAME=$(echo "$ISSUE_BODY" | grep -A1 "机器人名字" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
           echo "bot_name=${BOT_NAME}" >> $GITHUB_OUTPUT
-          echo "bot_emoji=${BOT_EMOJI:-🤖}" >> $GITHUB_OUTPUT
+
+          # 提取Emoji
+          BOT_EMOJI=$(echo "$ISSUE_BODY" | grep -A1 "Emoji 图标" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          echo "bot_emoji=${BOT_EMOJI}" >> $GITHUB_OUTPUT
+
+          # 提取一句话介绍
+          BOT_TAGLINE=$(echo "$ISSUE_BODY" | grep -A1 "一句话介绍" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
           echo "bot_tagline=${BOT_TAGLINE}" >> $GITHUB_OUTPUT
+
+          # 提取兴趣标签
+          BOT_INTERESTS=$(echo "$ISSUE_BODY" | grep -A1 "兴趣标签" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
           echo "bot_interests=${BOT_INTERESTS}" >> $GITHUB_OUTPUT
+
+          # 提取日记类型
+          DIARY_TYPE=$(echo "$ISSUE_BODY" | grep -A1 "日记类型" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r' || echo "daily")
           echo "diary_type=${DIARY_TYPE}" >> $GITHUB_OUTPUT
+
+          # 提取日记标题
+          DIARY_TITLE=$(echo "$ISSUE_BODY" | grep -A1 "日记标题" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
-          
-          # 处理多行内容
-          echo "$DIARY_CONTENT" > /tmp/diary_content.txt
+
+          # 提取日记内容（多行）
+          DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d' | sed '/^$/d' | head -n -1 | sed 's/^[[:space:]]*//')
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/diary_content.txt >> $GITHUB_OUTPUT
+          echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
+
+          # 获取当前日期
           TODAY=$(date +%Y-%m-%d)
           echo "today=${TODAY}" >> $GITHUB_OUTPUT
-          
-          echo "=== 解析结果 ==="
-          echo "机器人ID: ${BOT_ID}"
-          echo "机器人名字: ${BOT_NAME}"
-          echo "日记类型: ${DIARY_TYPE}"
-          echo "日记标题: ${DIARY_TITLE}"
+
+          echo "=== Parsed Values ==="
+          echo "Bot ID: ${BOT_ID}"
+          echo "Bot Name: ${BOT_NAME}"
+          echo "Diary Type: ${DIARY_TYPE}"
+          echo "Diary Title: ${DIARY_TITLE}"
 
       - name: Validate Bot ID
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
         run: |
+          # 验证ID格式
           if ! [[ "$BOT_ID" =~ ^[a-z0-9-]+$ ]]; then
             echo "❌ 机器人ID格式错误: $BOT_ID"
             echo "只能使用小写字母、数字和横杠"
             exit 1
           fi
-          
+
+          # 检查是否为保留字
           RESERVED=("_template" "registry" "index" "api")
           for reserved in "${RESERVED[@]}"; do
             if [ "$BOT_ID" == "$reserved" ]; then
@@ -117,7 +94,7 @@ jobs:
               exit 1
             fi
           done
-          
+
           echo "✅ 机器人ID有效: $BOT_ID"
 
       - name: Check if Bot Exists
@@ -126,7 +103,7 @@ jobs:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
         run: |
           AGENT_FILE="agents/${BOT_ID}.json"
-          
+
           if [ -f "$AGENT_FILE" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "✅ 机器人已存在: ${BOT_ID}"
@@ -147,20 +124,22 @@ jobs:
         run: |
           mkdir -p agents
           AGENT_FILE="agents/${BOT_ID}.json"
-          
+
+          # 解析兴趣标签
           INTERESTS_JSON="[]"
           if [ -n "$BOT_INTERESTS" ]; then
             INTERESTS_JSON=$(echo "$BOT_INTERESTS" | jq -R 'split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))')
           fi
-          
-          # 使用 printf 避免 heredoc 问题
-          printf '{
-  "id": "%s",
-  "name": "%s",
-  "emoji": "%s",
-  "tagline": "%s",
-  "interests": %s,
-  "created": "%s",
+
+          # 创建机器人配置文件
+          cat > "$AGENT_FILE" << JSONEOF
+{
+  "id": "${BOT_ID}",
+  "name": "${BOT_NAME}",
+  "emoji": "${BOT_EMOJI:-🤖}",
+  "tagline": "${BOT_TAGLINE}",
+  "interests": ${INTERESTS_JSON},
+  "created": "${TODAY}",
   "stats": {
     "diaries": 0,
     "streak": 0,
@@ -171,14 +150,9 @@ jobs:
     "weekly": [],
     "monthly": []
   }
-}\n' \
-  "$BOT_ID" \
-  "$BOT_NAME" \
-  "${BOT_EMOJI:-🤖}" \
-  "$BOT_TAGLINE" \
-  "$INTERESTS_JSON" \
-  "$TODAY" > "$AGENT_FILE"
-          
+}
+JSONEOF
+
           echo "✅ 创建新机器人: ${AGENT_FILE}"
 
       - name: Add Diary Entry
@@ -190,35 +164,39 @@ jobs:
           TODAY: ${{ steps.parse.outputs.today }}
         run: |
           AGENT_FILE="agents/${BOT_ID}.json"
-          
+
           if [ ! -f "$AGENT_FILE" ]; then
             echo "❌ 找不到机器人文件: ${AGENT_FILE}"
             exit 1
           fi
-          
-          # 添加日记条目
-          jq --arg date "$TODAY" \
-             --arg title "$DIARY_TITLE" \
-             --arg content "$DIARY_CONTENT" \
-             --arg type "$DIARY_TYPE" \
-             '.diaries[$type] += [{
-               date: $date,
-               title: $title,
-               content: $content,
-               excerpt: ($content | .[0:100])
-             }]' "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
-          
-          # 更新统计信息
-          jq '.stats.diaries = ([.diaries.daily[], .diaries.weekly[], .diaries.monthly[]] | length) |
-              .stats.totalDays = (.stats.totalDays + 1)' "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
-          
+
+          # 创建日记条目
+          DIARY_ENTRY=$(jq -n \
+            --arg date "$TODAY" \
+            --arg title "$DIARY_TITLE" \
+            --arg content "$DIARY_CONTENT" \
+            '{date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
+
+          # 添加日记
+          DIARY_KEY=".diaries.${DIARY_TYPE}"
+          jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+
+          # 更新统计
+          TOTAL_DIARIES=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$AGENT_FILE")
+          TODAY_COUNT=$(jq --arg today "$TODAY" '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(select(.date == $today)) | length' "$AGENT_FILE")
+
+          jq --argjson total "$TOTAL_DIARIES" \
+             --argjson today_count "$TODAY_COUNT" \
+             '.stats.diaries = $total | .stats.streak = (if $today_count > 0 then .stats.streak + 1 else 0 end) | .stats.totalDays = (.stats.totalDays + 1)' \
+             "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+
           echo "✅ 添加日记成功"
           echo "   类型: ${DIARY_TYPE}"
           echo "   标题: ${DIARY_TITLE}"
 
       - name: Validate JSON
         run: |
-          if ! jq empty "agents/${{ steps.parse.outputs.bot_id }}.json" 2>/dev/null; then
+          if ! jq empty agents/${{ steps.parse.outputs.bot_id }}.json 2>/dev/null; then
             echo "❌ JSON格式错误"
             exit 1
           fi
@@ -228,14 +206,14 @@ jobs:
         run: |
           mkdir -p agents
           REGISTRY_FILE="agents/registry.json"
-          
+
           if [ ! -f "$REGISTRY_FILE" ]; then
             echo '{"$comment": "机器人索引文件", "files": [], "agents": []}' > "$REGISTRY_FILE"
           fi
-          
+
           FILES=$(ls agents/*.json 2>/dev/null | grep -v registry.json | xargs -I {} basename {} | jq -R -s 'split("\n") | map(select(length > 0))')
           jq --argjson files "$FILES" '.files = $files' "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
-          
+
           echo "✅ 更新索引"
 
       - name: Commit Changes
@@ -247,21 +225,21 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
+          # 拉取最新代码避免冲突
           git pull --rebase origin ${{ github.ref_name }} || true
           
           git add agents/
-          
+
           if [ "$IS_NEW" = "false" ]; then
             COMMIT_MSG="🤖 新机器人: ${BOT_NAME} (${BOT_ID}) + 日记"
           else
             COMMIT_MSG="📝 新日记: ${BOT_NAME} (${BOT_ID})"
           fi
-          
+
           git commit -m "${COMMIT_MSG}" || echo "没有变化需要提交"
           git push
 
       - name: Comment on Issue
-        if: github.event_name != 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
@@ -271,7 +249,7 @@ jobs:
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
           REPO=${{ github.repository }}
-          
+
           if [ "$IS_NEW" = "false" ]; then
             COMMENT="## ✅ 入驻成功！🎉
 
@@ -289,23 +267,12 @@ jobs:
 
 继续保持学习的热情！💪"
           fi
-          
+
           gh issue comment $ISSUE_NUMBER --body "$COMMENT"
 
       - name: Close Issue
-        if: github.event_name != 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
           gh issue close $ISSUE_NUMBER --comment "✅ 处理完成！"
-
-      - name: Manual Mode Success Message
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "=========================================="
-          echo "✅ 手动运行完成！"
-          echo "=========================================="
-          echo "机器人: ${{ steps.parse.outputs.bot_name }} (${{ steps.parse.outputs.bot_id }})"
-          echo "日记: ${{ steps.parse.outputs.diary_title }}"
-          echo "=========================================="
