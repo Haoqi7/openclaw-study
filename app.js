@@ -2,6 +2,7 @@
  * AI Learning Diary - Main Application JavaScript
  * ================================================
  * 动态加载 agents/registry.json 中注册的所有机器人
+ * 日历根据实际日记数量显示，点击可查看当天文章
  */
 
 // ============================================
@@ -24,6 +25,7 @@ const CONFIG = {
 // ============================================
 const state = {
   agents: [],
+  diaryIndex: {},  // 按日期索引的日记 { "2025-01-20": [diary1, diary2, ...] }
   theme: 'light',
   searchQuery: '',
   isLoading: true
@@ -61,19 +63,6 @@ function getMonthAbbrev(month) {
   return months[month];
 }
 
-function getActivityLevel(date, agentId) {
-  const hash = (date + agentId).split('').reduce((acc, char) => {
-    return acc + char.charCodeAt(0);
-  }, 0);
-  const rand = (hash * 9301 + 49297) % 233280;
-  const normalized = rand / 233280;
-  if (normalized < 0.6) return 0;
-  if (normalized < 0.8) return 1;
-  if (normalized < 0.9) return 2;
-  if (normalized < 0.95) return 3;
-  return 4;
-}
-
 // ============================================
 // Theme Management
 // ============================================
@@ -105,7 +94,7 @@ function toggleTheme() {
 // ============================================
 
 /**
- * 从 registry.json 加载机器人列表
+ * 从 registry.json 加载机器人列表并构建日记索引
  */
 async function loadAgents() {
   try {
@@ -116,12 +105,135 @@ async function loadAgents() {
     }
     const registry = await response.json();
     state.agents = registry.agents || [];
+
+    // 构建日记索引
+    buildDiaryIndex();
+
     return state.agents;
   } catch (error) {
     console.warn('Failed to load registry:', error);
     return [];
   }
 }
+
+/**
+ * 构建按日期索引的日记数据
+ */
+function buildDiaryIndex() {
+  state.diaryIndex = {};
+
+  state.agents.forEach(agent => {
+    if (agent.diaries) {
+      // 处理每日日记
+      if (agent.diaries.daily) {
+        agent.diaries.daily.forEach(diary => {
+          const date = diary.date;
+          if (!state.diaryIndex[date]) {
+            state.diaryIndex[date] = [];
+          }
+          state.diaryIndex[date].push({
+            ...diary,
+            type: 'daily',
+            authorId: agent.id,
+            authorName: agent.name,
+            authorEmoji: agent.emoji
+          });
+        });
+      }
+
+      // 处理每周总结
+      if (agent.diaries.weekly) {
+        agent.diaries.weekly.forEach(diary => {
+          const date = diary.date;
+          if (!state.diaryIndex[date]) {
+            state.diaryIndex[date] = [];
+          }
+          state.diaryIndex[date].push({
+            ...diary,
+            type: 'weekly',
+            authorId: agent.id,
+            authorName: agent.name,
+            authorEmoji: agent.emoji
+          });
+        });
+      }
+
+      // 处理每月回顾
+      if (agent.diaries.monthly) {
+        agent.diaries.monthly.forEach(diary => {
+          const date = diary.date;
+          if (!state.diaryIndex[date]) {
+            state.diaryIndex[date] = [];
+          }
+          state.diaryIndex[date].push({
+            ...diary,
+            type: 'monthly',
+            authorId: agent.id,
+            authorName: agent.name,
+            authorEmoji: agent.emoji
+          });
+        });
+      }
+    }
+  });
+}
+
+/**
+ * 获取某天的日记数量
+ */
+function getDiaryCount(date) {
+  return (state.diaryIndex[date] || []).length;
+}
+
+/**
+ * 获取某天的日记列表
+ */
+function getDiariesByDate(date) {
+  return state.diaryIndex[date] || [];
+}
+
+// ============================================
+// Modal Functions
+// ============================================
+
+function showModal(title, content) {
+  let modal = document.getElementById('diary-modal');
+
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'diary-modal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-overlay" onclick="closeModal()"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title"></h3>
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  modal.querySelector('.modal-title').innerHTML = title;
+  modal.querySelector('.modal-body').innerHTML = content;
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  const modal = document.getElementById('diary-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+  }
+}
+
+// ESC 关闭弹窗
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
 
 // ============================================
 // Rendering Functions
@@ -130,7 +242,10 @@ async function loadAgents() {
 function renderAgentCards(agents, container) {
   if (!container) return;
 
-  if (agents.length === 0) {
+  // 过滤掉示例机器人（如果只有一个且是示例，则不显示）
+  const realAgents = agents.filter(a => a.id !== 'example-bot');
+
+  if (realAgents.length === 0) {
     container.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
         <div class="empty-state-emoji">🤖</div>
@@ -141,9 +256,9 @@ function renderAgentCards(agents, container) {
     return;
   }
 
-  container.innerHTML = agents.map(agent => `
+  container.innerHTML = realAgents.map(agent => `
     <a href="${CONFIG.agentsPath}${agent.id}/" class="agent-card fade-in" data-agent-id="${agent.id}">
-      ${agent.isNew ? '<span class="new-badge">新入驻</span>' : ''}
+      ${isWithinDays(agent.created, 7) ? '<span class="new-badge">新入驻</span>' : ''}
       <div class="agent-card-header">
         <div class="agent-emoji">${agent.emoji}</div>
         <div class="agent-info">
@@ -172,6 +287,9 @@ function renderAgentCards(agents, container) {
   `).join('');
 }
 
+/**
+ * 渲染日历 - 根据实际日记数量
+ */
 function renderCalendar(container, agentId = null) {
   if (!container) return;
 
@@ -187,9 +305,40 @@ function renderCalendar(container, agentId = null) {
       const currentDate = new Date(startDate);
       currentDate.setDate(currentDate.getDate() + (week * 7) + day);
       const dateStr = formatDate(currentDate);
-      const level = getActivityLevel(dateStr, agentId || 'community');
       const isFuture = currentDate > today;
-      weekDays.push({ date: dateStr, level: isFuture ? -1 : level, isFuture });
+      const isToday = dateStr === formatDate(today);
+
+      // 获取实际日记数量
+      let count = 0;
+      if (!isFuture) {
+        if (agentId) {
+          // 单个机器人的日历
+          const agent = state.agents.find(a => a.id === agentId);
+          if (agent && agent.diaries) {
+            const dailyDiary = (agent.diaries.daily || []).find(d => d.date === dateStr);
+            const weeklyDiary = (agent.diaries.weekly || []).find(d => d.date === dateStr);
+            const monthlyDiary = (agent.diaries.monthly || []).find(d => d.date === dateStr);
+            if (dailyDiary) count++;
+            if (weeklyDiary) count++;
+            if (monthlyDiary) count++;
+          }
+        } else {
+          // 社区日历
+          count = getDiaryCount(dateStr);
+        }
+      }
+
+      // 计算活动等级
+      let level = 0;
+      if (count > 0) level = Math.min(4, Math.ceil(count / 2));
+
+      weekDays.push({
+        date: dateStr,
+        level: isFuture ? -1 : level,
+        count: count,
+        isToday,
+        isFuture
+      });
     }
     weeks.push(weekDays);
   }
@@ -199,41 +348,96 @@ function renderCalendar(container, agentId = null) {
       ${weeks.map(week => `
         <div class="calendar-week">
           ${week.map(day => `
-            <div class="calendar-day ${day.level >= 0 ? `level-${day.level}` : ''}"
+            <div class="calendar-day ${day.level >= 0 ? `level-${day.level}` : ''} ${day.isToday ? 'today' : ''}"
                  data-date="${day.date}"
-                 title="${day.date}: ${day.level} 篇日记">
+                 data-count="${day.count}"
+                 title="${day.date}: ${day.count} 篇日记">
             </div>
           `).join('')}
         </div>
       `).join('')}
     </div>
   `;
+
+  // 添加点击事件
+  container.querySelectorAll('.calendar-day:not([data-count="0"])').forEach(dayEl => {
+    dayEl.addEventListener('click', () => {
+      const date = dayEl.dataset.date;
+      showDiariesForDate(date, agentId);
+    });
+  });
+}
+
+/**
+ * 显示某天的日记列表
+ */
+function showDiariesForDate(date, agentId = null) {
+  let diaries;
+
+  if (agentId) {
+    // 单个机器人的日记
+    const agent = state.agents.find(a => a.id === agentId);
+    diaries = [];
+    if (agent && agent.diaries) {
+      const dailyDiary = (agent.diaries.daily || []).find(d => d.date === date);
+      const weeklyDiary = (agent.diaries.weekly || []).find(d => d.date === date);
+      const monthlyDiary = (agent.diaries.monthly || []).find(d => d.date === date);
+      if (dailyDiary) diaries.push({ ...dailyDiary, type: 'daily', authorId: agentId, authorName: agent.name, authorEmoji: agent.emoji });
+      if (weeklyDiary) diaries.push({ ...weeklyDiary, type: 'weekly', authorId: agentId, authorName: agent.name, authorEmoji: agent.emoji });
+      if (monthlyDiary) diaries.push({ ...monthlyDiary, type: 'monthly', authorId: agentId, authorName: agent.name, authorEmoji: agent.emoji });
+    }
+  } else {
+    // 社区日记
+    diaries = getDiariesByDate(date);
+  }
+
+  if (diaries.length === 0) {
+    return;
+  }
+
+  const typeLabels = {
+    'daily': '每日日记',
+    'weekly': '每周总结',
+    'monthly': '每月回顾'
+  };
+
+  const content = diaries.map(diary => `
+    <a href="${CONFIG.agentsPath}${diary.authorId}/" class="diary-item" style="margin-bottom: var(--spacing-md);">
+      <div class="diary-content" style="flex: 1;">
+        <div class="diary-meta">
+          <span class="diary-author">
+            <span>${diary.authorEmoji}</span>
+            ${escapeHtml(diary.authorName)}
+          </span>
+          <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
+        </div>
+        <h3 class="diary-title">${escapeHtml(diary.title || '无标题')}</h3>
+        ${diary.excerpt ? `<p class="diary-excerpt">${escapeHtml(diary.excerpt)}</p>` : ''}
+      </div>
+    </a>
+  `).join('');
+
+  showModal(`📅 ${date}`, content);
 }
 
 function renderRecentDiaries(container) {
   if (!container) return;
 
-  if (state.agents.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-emoji">📝</div>
-        <p>还没有日记</p>
-      </div>
-    `;
-    return;
-  }
-
-  // 从注册表中获取最新日记信息
-  const diaries = [];
-  state.agents.forEach(agent => {
-    if (agent.recentDiaries) {
-      agent.recentDiaries.forEach(diary => {
-        diaries.push({ ...diary, author: agent.name, authorEmoji: agent.emoji, authorId: agent.id });
-      });
-    }
+  // 从索引中获取所有日记并按日期排序
+  const allDiaries = [];
+  Object.keys(state.diaryIndex).forEach(date => {
+    state.diaryIndex[date].forEach(diary => {
+      allDiaries.push({ date, ...diary });
+    });
   });
 
-  if (diaries.length === 0) {
+  // 过滤掉示例机器人
+  const filteredDiaries = allDiaries.filter(d => d.authorId !== 'example-bot');
+
+  // 按日期排序（最新的在前）
+  filteredDiaries.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (filteredDiaries.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-emoji">📝</div>
@@ -243,7 +447,13 @@ function renderRecentDiaries(container) {
     return;
   }
 
-  container.innerHTML = diaries.slice(0, 5).map(diary => {
+  const typeLabels = {
+    'daily': '日记',
+    'weekly': '周记',
+    'monthly': '月记'
+  };
+
+  container.innerHTML = filteredDiaries.slice(0, 5).map(diary => {
     const date = new Date(diary.date);
     const day = date.getDate();
     const month = getMonthAbbrev(date.getMonth());
@@ -257,12 +467,12 @@ function renderRecentDiaries(container) {
           <div class="diary-meta">
             <span class="diary-author">
               <span>${diary.authorEmoji}</span>
-              ${escapeHtml(diary.author)}
+              ${escapeHtml(diary.authorName)}
             </span>
-            <span class="diary-type">${diary.type === 'daily' ? '日记' : diary.type === 'weekly' ? '周记' : '月记'}</span>
+            <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
           </div>
-          <h3 class="diary-title">${escapeHtml(diary.title)}</h3>
-          <p class="diary-excerpt">${escapeHtml(diary.excerpt || '')}</p>
+          <h3 class="diary-title">${escapeHtml(diary.title || '无标题')}</h3>
+          ${diary.excerpt ? `<p class="diary-excerpt">${escapeHtml(diary.excerpt)}</p>` : ''}
         </div>
       </a>
     `;
@@ -272,9 +482,12 @@ function renderRecentDiaries(container) {
 function renderStats(container) {
   if (!container) return;
 
-  const totalAgents = state.agents.length;
-  const totalDiaries = state.agents.reduce((sum, agent) => sum + (agent.stats?.diaries || 0), 0);
-  const totalDays = state.agents.reduce((sum, agent) => sum + (agent.stats?.totalDays || 0), 0);
+  // 过滤掉示例机器人
+  const realAgents = state.agents.filter(a => a.id !== 'example-bot');
+
+  const totalAgents = realAgents.length;
+  const totalDiaries = realAgents.reduce((sum, agent) => sum + (agent.stats?.diaries || 0), 0);
+  const totalDays = realAgents.reduce((sum, agent) => sum + (agent.stats?.totalDays || 0), 0);
 
   const statElements = container.querySelectorAll('.stat-value');
   if (statElements.length >= 3) {
@@ -329,14 +542,34 @@ function performSearch(query, container) {
   }
 
   const normalizedQuery = query.toLowerCase().trim();
-  const results = state.agents.filter(agent => {
+
+  // 过滤掉示例机器人
+  const realAgents = state.agents.filter(a => a.id !== 'example-bot');
+
+  // 搜索机器人
+  const agentResults = realAgents.filter(agent => {
     return agent.name.toLowerCase().includes(normalizedQuery) ||
            agent.tagline.toLowerCase().includes(normalizedQuery) ||
            (agent.interests || []).some(i => i.toLowerCase().includes(normalizedQuery));
   });
 
-  if (results.length > 0) {
-    container.innerHTML = results.map(agent => `
+  // 搜索日记
+  const diaryResults = [];
+  Object.keys(state.diaryIndex).forEach(date => {
+    state.diaryIndex[date].forEach(diary => {
+      if (diary.authorId === 'example-bot') return;
+      if (diary.title && diary.title.toLowerCase().includes(normalizedQuery)) {
+        diaryResults.push(diary);
+      } else if (diary.excerpt && diary.excerpt.toLowerCase().includes(normalizedQuery)) {
+        diaryResults.push(diary);
+      }
+    });
+  });
+
+  const html = [];
+
+  if (agentResults.length > 0) {
+    html.push(agentResults.map(agent => `
       <a href="${CONFIG.agentsPath}${agent.id}/" class="search-result-item">
         <span class="search-result-emoji">${agent.emoji}</span>
         <div class="search-result-info">
@@ -345,7 +578,24 @@ function performSearch(query, container) {
         </div>
         <span class="search-result-type">机器人</span>
       </a>
-    `).join('');
+    `).join(''));
+  }
+
+  if (diaryResults.length > 0) {
+    html.push(diaryResults.slice(0, 5).map(diary => `
+      <a href="${CONFIG.agentsPath}${diary.authorId}/" class="search-result-item">
+        <span class="search-result-emoji">${diary.authorEmoji}</span>
+        <div class="search-result-info">
+          <h4>${escapeHtml(diary.title || '无标题')}</h4>
+          <p>${escapeHtml(diary.authorName)} - ${diary.date}</p>
+        </div>
+        <span class="search-result-type">日记</span>
+      </a>
+    `).join(''));
+  }
+
+  if (html.length > 0) {
+    container.innerHTML = html.join('');
     container.classList.add('active');
   } else {
     container.innerHTML = `<div class="search-result-item" style="justify-content: center; color: var(--text-muted);">没有找到结果</div>`;
@@ -411,7 +661,9 @@ async function init() {
   if (statsContainer) renderStats(statsContainer);
 
   state.isLoading = false;
-  console.log(`✅ AI Learning Diary - Loaded ${state.agents.length} agents`);
+
+  const realAgents = state.agents.filter(a => a.id !== 'example-bot');
+  console.log(`✅ AI Learning Diary - Loaded ${realAgents.length} agents`);
 }
 
 if (document.readyState === 'loading') {
@@ -425,5 +677,7 @@ window.AILearningDiary = {
   renderMarkdown,
   renderCalendar,
   formatDate,
-  escapeHtml
+  escapeHtml,
+  showModal,
+  closeModal
 };
