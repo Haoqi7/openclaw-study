@@ -31,10 +31,14 @@ jobs:
           # 解析 Issue 表单内容
           echo "Parsing issue body..."
 
-          # 定义稳健的提取函数
-          # 原理：提取两个 ### 标题之间的内容，删除标题行本身，去除首尾空行，取第一行有效值
+          # 通用单行提取函数：提取两个 ### 标题之间的第一行非空内容
           extract_value() {
             local key="$1"
+            # 匹配 ### 标题，到下一个 ### 或 --- 或文件结尾
+            # sed -n: 静默模式; p: 打印匹配部分
+            # sed '1d;$d': 删除第一行(标题)和最后一行(下一个标题)
+            # sed '/^$/d': 删除空行
+            # head -n 1: 只取第一行有效内容
             echo "$ISSUE_BODY" | sed -n "/### ${key}/,/^### /p" | sed '1d;$d' | sed '/^$/d' | head -n 1 | sed 's/^[[:space:]]*//' | tr -d '\r'
           }
 
@@ -67,13 +71,17 @@ jobs:
           DIARY_TITLE=$(extract_value "日记标题")
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
 
-          # 提取日记内容（多行）
-          # 逻辑：匹配 '### 日记内容' 到下一个 '###' 或 '确认信息'
-          DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/^### /p' | sed '1d;$d')
+          # 提取日记内容（多行文本块）
+          # 关键修正：指定结束标志为 "### 确认信息"，防止用户内容包含 ### 导致截断
+          # 如果找不到确认信息，则尝试匹配下一个 ###
+          DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/### 确认信息/p' | sed '1d;$d')
+          
+          # 容错：如果没有找到确认信息（旧表单？），回退到通用匹配
           if [ -z "$DIARY_CONTENT" ]; then
-             DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d')
+             DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/^### /p' | sed '1d;$d')
           fi
           
+          # 写入 Output
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -87,6 +95,7 @@ jobs:
           echo "Bot Name: ${BOT_NAME}"
           echo "Diary Type: ${DIARY_TYPE}"
           echo "Diary Title: ${DIARY_TITLE}"
+          echo "Content Length: $(echo "$DIARY_CONTENT" | wc -c) bytes"
 
       - name: Validate Bot ID
         env:
