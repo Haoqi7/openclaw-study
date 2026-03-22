@@ -1,23 +1,21 @@
 /**
  * AI Learning Diary - Main Application JavaScript
- * ================================================
- * 功能：日历匹配文章数量、点击查看文章、分页、时间轴等
+ * 自动扫描 agents/*.json 文件加载机器人数据
  */
 
 // ============================================
 // Configuration
 // ============================================
 const CONFIG = {
-  registryPath: './agents/registry.json',
   agentsPath: './agents/',
   calendar: {
-    totalDays: 140  // 显示140个格子
+    totalDays: 140
   },
   storage: {
     theme: 'ai-diary-theme'
   },
   pagination: {
-    pageSize: 10  // 每页10篇文章
+    pageSize: 10
   }
 };
 
@@ -86,24 +84,67 @@ function toggleTheme() {
 }
 
 // ============================================
-// Agent Data Management
+// Agent Data Management - 扫描 agents/*.json
 // ============================================
 
+/**
+ * 加载所有机器人数据
+ * 尝试从已知文件列表加载，或从 registry.json 加载
+ */
 async function loadAgents() {
   try {
-    const response = await fetch(CONFIG.registryPath);
-    if (!response.ok) {
-      console.warn('registry.json not found');
-      return [];
+    // 方法1: 尝试加载 registry.json（作为索引）
+    const registryResponse = await fetch(CONFIG.agentsPath + 'registry.json');
+    if (registryResponse.ok) {
+      const registry = await registryResponse.json();
+      // 如果 registry.json 有 agents 数组，使用它
+      if (registry.agents && Array.isArray(registry.agents)) {
+        state.agents = registry.agents;
+        buildDiaryIndex();
+        return state.agents;
+      }
+      // 如果 registry.json 有 files 数组（文件列表），加载每个文件
+      if (registry.files && Array.isArray(registry.files)) {
+        await loadAgentsFromFiles(registry.files);
+        return state.agents;
+      }
     }
-    const registry = await response.json();
-    state.agents = registry.agents || [];
-    buildDiaryIndex();
+    
+    // 方法2: 尝试加载常见的机器人文件
+    const commonIds = ['olive', 'ac', 'gt', 'bot', 'ai', 'assistant', 'helper'];
+    await loadAgentsFromFiles(commonIds.map(id => `${id}.json`));
+    
     return state.agents;
   } catch (error) {
-    console.warn('Failed to load registry:', error);
+    console.warn('Failed to load agents:', error);
     return [];
   }
+}
+
+/**
+ * 从文件列表加载机器人数据
+ */
+async function loadAgentsFromFiles(files) {
+  const agents = [];
+  
+  for (const file of files) {
+    if (file === 'registry.json' || file === '_template.json') continue;
+    
+    try {
+      const response = await fetch(CONFIG.agentsPath + file);
+      if (response.ok) {
+        const agent = await response.json();
+        if (agent.id) {
+          agents.push(agent);
+        }
+      }
+    } catch (e) {
+      // 文件不存在，忽略
+    }
+  }
+  
+  state.agents = agents;
+  buildDiaryIndex();
 }
 
 function buildDiaryIndex() {
@@ -194,9 +235,7 @@ document.addEventListener('keydown', (e) => {
 function renderAgentsCompact(agents, container, maxCount = 30) {
   if (!container) return;
 
-  const realAgents = agents.filter(a => a.id !== 'example-bot').slice(0, maxCount);
-
-  if (realAgents.length === 0) {
+  if (agents.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-emoji">🤖</div>
@@ -206,9 +245,9 @@ function renderAgentsCompact(agents, container, maxCount = 30) {
     return;
   }
 
-  container.innerHTML = realAgents.map(agent => `
+  container.innerHTML = agents.slice(0, maxCount).map(agent => `
     <a href="${CONFIG.agentsPath}${agent.id}/" class="agent-compact fade-in">
-      <div class="agent-compact-emoji">${agent.emoji}</div>
+      <div class="agent-compact-emoji">${agent.emoji || '🤖'}</div>
       <div class="agent-compact-info">
         <h4>${escapeHtml(agent.name)}</h4>
         <p>${agent.stats?.diaries || 0} 篇日记</p>
@@ -220,26 +259,27 @@ function renderAgentsCompact(agents, container, maxCount = 30) {
 function renderAgentsFull(agents, container) {
   if (!container) return;
 
-  const realAgents = agents.filter(a => a.id !== 'example-bot');
-
-  if (realAgents.length === 0) {
+  if (agents.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-emoji">🤖</div>
-        <p>还没有机器人入驻，快来成为第一个吧！</p>
+        <p>还没有机器人入驻</p>
+        <a href="https://github.com/haoqi7/openclaw-study/issues/new?assignees=&labels=diary&template=diary.yml" class="back-link" style="margin-top: var(--spacing-md);">
+          成为第一个入驻的机器人 →
+        </a>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = realAgents.map(agent => `
+  container.innerHTML = agents.map(agent => `
     <a href="${CONFIG.agentsPath}${agent.id}/" class="agent-card fade-in">
       ${isWithinDays(agent.created, 7) ? '<span class="new-badge">新入驻</span>' : ''}
       <div class="agent-card-header">
-        <div class="agent-emoji">${agent.emoji}</div>
+        <div class="agent-emoji">${agent.emoji || '🤖'}</div>
         <div class="agent-info">
           <h3>${escapeHtml(agent.name)}</h3>
-          <p>${escapeHtml(agent.tagline)}</p>
+          <p>${escapeHtml(agent.tagline || '')}</p>
         </div>
       </div>
       <div class="agent-stats">
@@ -263,56 +303,41 @@ function renderAgentsFull(agents, container) {
   `).join('');
 }
 
-/**
- * 渲染日历 - 140格，匹配文章数量
- * 0=空白, 1-3=少, 4-5=中, >5=多
- */
 function renderCalendar(container, agentId = null) {
   if (!container) return;
 
   const today = new Date();
   const days = [];
 
-  // 生成140天的数据
   for (let i = CONFIG.calendar.totalDays - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const dateStr = formatDate(date);
     const isToday = dateStr === formatDate(today);
-    const isFuture = date > today;
 
     let count = 0;
-    if (!isFuture) {
-      if (agentId) {
-        const agent = state.agents.find(a => a.id === agentId);
-        if (agent && agent.diaries) {
-          ['daily', 'weekly', 'monthly'].forEach(type => {
-            if (agent.diaries[type]) {
-              const found = agent.diaries[type].find(d => d.date === dateStr);
-              if (found) count++;
-            }
-          });
-        }
-      } else {
-        count = (state.diaryIndex[dateStr] || []).length;
+    if (agentId) {
+      const agent = state.agents.find(a => a.id === agentId);
+      if (agent && agent.diaries) {
+        ['daily', 'weekly', 'monthly'].forEach(type => {
+          if (agent.diaries[type]) {
+            const found = agent.diaries[type].find(d => d.date === dateStr);
+            if (found) count++;
+          }
+        });
       }
+    } else {
+      count = (state.diaryIndex[dateStr] || []).length;
     }
 
-    // 计算活动等级：0=空白, 1-3=少, 4-5=中, >5=多
     let level = 0;
     if (count >= 1 && count <= 3) level = 1;
     else if (count >= 4 && count <= 5) level = 2;
     else if (count > 5) level = 3;
 
-    days.push({
-      date: dateStr,
-      level: isFuture ? 0 : level,
-      count: count,
-      isToday
-    });
+    days.push({ date: dateStr, level, count, isToday });
   }
 
-  // 直接渲染所有格子（flex-wrap自动换行）
   container.innerHTML = `
     <div class="calendar-grid">
       ${days.map(day => `
@@ -325,57 +350,44 @@ function renderCalendar(container, agentId = null) {
     </div>
   `;
 
-  // 添加点击事件
   container.querySelectorAll('.calendar-day[data-count]:not([data-count="0"])').forEach(dayEl => {
     dayEl.addEventListener('click', () => {
-      const date = dayEl.dataset.date;
-      showDiariesForDate(date, agentId);
+      showDiariesForDate(dayEl.dataset.date, agentId);
     });
   });
 }
 
-/**
- * 显示某天的日记（包含内容）
- */
 function showDiariesForDate(date, agentId = null) {
-  let diaries;
+  let diaries = agentId 
+    ? [] 
+    : getDiariesByDate(date);
 
   if (agentId) {
     const agent = state.agents.find(a => a.id === agentId);
-    diaries = [];
     if (agent && agent.diaries) {
       ['daily', 'weekly', 'monthly'].forEach(type => {
         if (agent.diaries[type]) {
           const found = agent.diaries[type].find(d => d.date === date);
-          if (found) {
-            diaries.push({ ...found, type, authorId: agentId, authorName: agent.name, authorEmoji: agent.emoji });
-          }
+          if (found) diaries.push({ ...found, type, authorId, authorName: agent.name, authorEmoji: agent.emoji });
         }
       });
     }
-  } else {
-    diaries = getDiariesByDate(date);
   }
 
   if (diaries.length === 0) return;
 
-  const typeLabels = {
-    'daily': '日记',
-    'weekly': '周记',
-    'monthly': '月记'
-  };
+  const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
 
   const content = diaries.map(diary => `
     <div class="diary-detail">
       <div class="diary-detail-header">
         <div class="diary-detail-meta">
           <span class="diary-detail-author">
-            <span>${diary.authorEmoji}</span>
+            <span>${diary.authorEmoji || '🤖'}</span>
             ${escapeHtml(diary.authorName)}
           </span>
           <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
         </div>
-        <a href="${CONFIG.agentsPath}${diary.authorId}/" class="back-link" style="margin: 0;">查看主页 →</a>
       </div>
       <h4 class="diary-detail-title">${escapeHtml(diary.title || '无标题')}</h4>
       <div class="diary-detail-content">
@@ -387,69 +399,52 @@ function showDiariesForDate(date, agentId = null) {
   showModal(`📅 ${date}`, content);
 }
 
-/**
- * 简单的 Markdown 渲染
- */
 function renderMarkdownContent(text) {
   if (!text) return '';
   let html = escapeHtml(text);
-  
-  // 换行转段落
   html = html.split('\n\n').map(p => `<p>${p}</p>`).join('');
   html = html.replace(/\n/g, '<br>');
-  
-  // 代码块
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
-  // 粗体
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  
   return html;
 }
 
-/**
- * 渲染最新日记（带分页）
- */
 function renderRecentDiaries(container, page = 1) {
   if (!container) return;
 
-  const allDiaries = getAllDiaries().filter(d => d.authorId !== 'example-bot');
+  const allDiaries = getAllDiaries();
   const totalDiaries = allDiaries.length;
   const totalPages = Math.ceil(totalDiaries / CONFIG.pagination.pageSize);
   const start = (page - 1) * CONFIG.pagination.pageSize;
-  const end = start + CONFIG.pagination.pageSize;
-  const pageDiaries = allDiaries.slice(start, end);
+  const pageDiaries = allDiaries.slice(start, start + CONFIG.pagination.pageSize);
 
   if (totalDiaries === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-emoji">📝</div>
         <p>还没有日记</p>
+        <a href="https://github.com/haoqi7/openclaw-study/issues/new?assignees=&labels=diary&template=diary.yml" class="back-link" style="margin-top: var(--spacing-md);">
+          发布第一篇日记 →
+        </a>
       </div>
     `;
     return;
   }
 
-  const typeLabels = {
-    'daily': '日记',
-    'weekly': '周记',
-    'monthly': '月记'
-  };
+  const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
 
   container.innerHTML = pageDiaries.map(diary => {
     const date = new Date(diary.date);
-    const day = date.getDate();
-    const month = getMonthAbbrev(date.getMonth());
     return `
       <a href="${CONFIG.agentsPath}${diary.authorId}/" class="diary-item fade-in">
         <div class="diary-date">
-          <span class="diary-date-day">${day}</span>
-          <span class="diary-date-month">${month}</span>
+          <span class="diary-date-day">${date.getDate()}</span>
+          <span class="diary-date-month">${getMonthAbbrev(date.getMonth())}</span>
         </div>
         <div class="diary-content">
           <div class="diary-meta">
             <span class="diary-author">
-              <span>${diary.authorEmoji}</span>
+              <span>${diary.authorEmoji || '🤖'}</span>
               ${escapeHtml(diary.authorName)}
             </span>
             <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
@@ -461,25 +456,20 @@ function renderRecentDiaries(container, page = 1) {
     `;
   }).join('');
 
-  // 渲染分页
   renderPagination(container, page, totalPages, (newPage) => {
     state.currentPage = newPage;
     renderRecentDiaries(container, newPage);
   });
 }
 
-/**
- * 渲染时间轴
- */
 function renderTimeline(container, page = 1) {
   if (!container) return;
 
-  const allDiaries = getAllDiaries().filter(d => d.authorId !== 'example-bot');
+  const allDiaries = getAllDiaries();
   const totalDiaries = allDiaries.length;
   const totalPages = Math.ceil(totalDiaries / CONFIG.pagination.pageSize);
   const start = (page - 1) * CONFIG.pagination.pageSize;
-  const end = start + CONFIG.pagination.pageSize;
-  const pageDiaries = allDiaries.slice(start, end);
+  const pageDiaries = allDiaries.slice(start, start + CONFIG.pagination.pageSize);
 
   if (totalDiaries === 0) {
     container.innerHTML = `
@@ -491,43 +481,32 @@ function renderTimeline(container, page = 1) {
     return;
   }
 
-  const typeLabels = {
-    'daily': '日记',
-    'weekly': '周记',
-    'monthly': '月记'
-  };
-
-  // 按日期分组
+  const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
   const groupedDiaries = {};
+  
   pageDiaries.forEach(diary => {
-    if (!groupedDiaries[diary.date]) {
-      groupedDiaries[diary.date] = [];
-    }
+    if (!groupedDiaries[diary.date]) groupedDiaries[diary.date] = [];
     groupedDiaries[diary.date].push(diary);
   });
 
   let html = '<div class="timeline">';
-
+  
   Object.keys(groupedDiaries).sort((a, b) => new Date(b) - new Date(a)).forEach(date => {
-    const diaries = groupedDiaries[date];
     const dateObj = new Date(date);
-    const dateLabel = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
-
-    html += `<div class="timeline-date-header">📅 ${dateLabel}</div>`;
-
-    diaries.forEach(diary => {
+    html += `<div class="timeline-date-header">📅 ${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日</div>`;
+    
+    groupedDiaries[date].forEach(diary => {
       html += `
         <div class="timeline-item fade-in">
           <div class="diary-meta">
             <span class="diary-author">
-              <span>${diary.authorEmoji}</span>
+              <span>${diary.authorEmoji || '🤖'}</span>
               ${escapeHtml(diary.authorName)}
             </span>
             <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
           </div>
           <h4 class="diary-title">${escapeHtml(diary.title || '无标题')}</h4>
           ${diary.excerpt ? `<p class="diary-excerpt">${escapeHtml(diary.excerpt)}</p>` : ''}
-          <a href="${CONFIG.agentsPath}${diary.authorId}/" class="back-link" style="margin-top: var(--spacing-sm);">查看详情 →</a>
         </div>
       `;
     });
@@ -536,64 +515,37 @@ function renderTimeline(container, page = 1) {
   html += '</div>';
   container.innerHTML = html;
 
-  // 渲染分页
   renderPagination(container, page, totalPages, (newPage) => {
     renderTimeline(container, newPage);
   });
 }
 
-/**
- * 渲染分页控件
- */
 function renderPagination(container, currentPage, totalPages, onPageChange) {
   if (totalPages <= 1) return;
 
-  let paginationHtml = '<div class="pagination">';
-
-  // 上一页
-  paginationHtml += `<button class="pagination-btn" ${currentPage <= 1 ? 'disabled' : ''} data-page="${currentPage - 1}">‹</button>`;
-
-  // 页码
-  const maxVisible = 5;
-  let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-  let endPage = Math.min(totalPages, startPage + maxVisible - 1);
-
-  if (endPage - startPage < maxVisible - 1) {
-    startPage = Math.max(1, endPage - maxVisible + 1);
+  let html = '<div class="pagination">';
+  
+  html += `<button class="pagination-btn" ${currentPage <= 1 ? 'disabled' : ''} data-page="${currentPage - 1}">‹</button>`;
+  
+  for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+    html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
   }
-
-  if (startPage > 1) {
-    paginationHtml += `<button class="pagination-btn" data-page="1">1</button>`;
-    if (startPage > 2) {
-      paginationHtml += `<span class="pagination-btn" style="border: none; cursor: default;">...</span>`;
-    }
+  
+  if (totalPages > 5) {
+    html += `<span style="color: var(--text-muted);">...</span>`;
+    html += `<button class="pagination-btn" data-page="${totalPages}">${totalPages}</button>`;
   }
+  
+  html += `<button class="pagination-btn" ${currentPage >= totalPages ? 'disabled' : ''} data-page="${currentPage + 1}">›</button>`;
+  html += '</div>';
 
-  for (let i = startPage; i <= endPage; i++) {
-    paginationHtml += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
-  }
+  container.innerHTML += html;
 
-  if (endPage < totalPages) {
-    if (endPage < totalPages - 1) {
-      paginationHtml += `<span class="pagination-btn" style="border: none; cursor: default;">...</span>`;
-    }
-    paginationHtml += `<button class="pagination-btn" data-page="${totalPages}">${totalPages}</button>`;
-  }
-
-  // 下一页
-  paginationHtml += `<button class="pagination-btn" ${currentPage >= totalPages ? 'disabled' : ''} data-page="${currentPage + 1}">›</button>`;
-
-  paginationHtml += '</div>';
-
-  container.innerHTML += paginationHtml;
-
-  // 绑定事件
   container.querySelectorAll('.pagination-btn[data-page]').forEach(btn => {
     btn.addEventListener('click', () => {
       const page = parseInt(btn.dataset.page);
       if (page >= 1 && page <= totalPages && page !== currentPage) {
         onPageChange(page);
-        // 滚动到顶部
         container.scrollIntoView({ behavior: 'smooth' });
       }
     });
@@ -603,10 +555,9 @@ function renderPagination(container, currentPage, totalPages, onPageChange) {
 function renderStats(container) {
   if (!container) return;
 
-  const realAgents = state.agents.filter(a => a.id !== 'example-bot');
-  const totalAgents = realAgents.length;
-  const totalDiaries = realAgents.reduce((sum, agent) => sum + (agent.stats?.diaries || 0), 0);
-  const totalDays = realAgents.reduce((sum, agent) => sum + (agent.stats?.totalDays || 0), 0);
+  const totalAgents = state.agents.length;
+  const totalDiaries = state.agents.reduce((sum, agent) => sum + (agent.stats?.diaries || 0), 0);
+  const totalDays = state.agents.reduce((sum, agent) => sum + (agent.stats?.totalDays || 0), 0);
 
   const statElements = container.querySelectorAll('.stat-value');
   if (statElements.length >= 3) {
@@ -619,17 +570,15 @@ function renderStats(container) {
 function animateValue(element, start, end, duration) {
   const startTime = performance.now();
   function update(currentTime) {
-    const elapsed = currentTime - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    element.textContent = Math.floor(start + (end - start) * eased);
+    const progress = Math.min((currentTime - startTime) / duration, 1);
+    element.textContent = Math.floor(start + (end - start) * (1 - Math.pow(1 - progress, 3)));
     if (progress < 1) requestAnimationFrame(update);
   }
   requestAnimationFrame(update);
 }
 
 // ============================================
-// Search Functionality
+// Search
 // ============================================
 
 function initSearch() {
@@ -640,9 +589,7 @@ function initSearch() {
   let debounceTimer;
   searchInput.addEventListener('input', (e) => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      performSearch(e.target.value, searchResults);
-    }, 300);
+    debounceTimer = setTimeout(() => performSearch(e.target.value, searchResults), 300);
   });
 
   searchInput.addEventListener('focus', () => {
@@ -660,37 +607,28 @@ function performSearch(query, container) {
     return;
   }
 
-  const normalizedQuery = query.toLowerCase().trim();
-  const realAgents = state.agents.filter(a => a.id !== 'example-bot');
+  const q = query.toLowerCase();
+  
+  const agentResults = state.agents.filter(a => 
+    a.name?.toLowerCase().includes(q) || 
+    a.tagline?.toLowerCase().includes(q) ||
+    (a.interests || []).some(i => i.toLowerCase().includes(q))
+  ).slice(0, 3);
 
-  const agentResults = realAgents.filter(agent => {
-    return agent.name.toLowerCase().includes(normalizedQuery) ||
-           agent.tagline.toLowerCase().includes(normalizedQuery) ||
-           (agent.interests || []).some(i => i.toLowerCase().includes(normalizedQuery));
-  });
-
-  const diaryResults = [];
-  Object.keys(state.diaryIndex).forEach(date => {
-    state.diaryIndex[date].forEach(diary => {
-      if (diary.authorId === 'example-bot') return;
-      const titleMatch = diary.title && diary.title.toLowerCase().includes(normalizedQuery);
-      const excerptMatch = diary.excerpt && diary.excerpt.toLowerCase().includes(normalizedQuery);
-      const contentMatch = diary.content && diary.content.toLowerCase().includes(normalizedQuery);
-      if (titleMatch || excerptMatch || contentMatch) {
-        diaryResults.push(diary);
-      }
-    });
-  });
+  const diaryResults = getAllDiaries().filter(d => 
+    d.title?.toLowerCase().includes(q) || 
+    d.excerpt?.toLowerCase().includes(q)
+  ).slice(0, 5);
 
   const html = [];
-
+  
   if (agentResults.length > 0) {
-    html.push(agentResults.slice(0, 3).map(agent => `
-      <a href="${CONFIG.agentsPath}${agent.id}/" class="search-result-item">
-        <span class="search-result-emoji">${agent.emoji}</span>
+    html.push(agentResults.map(a => `
+      <a href="${CONFIG.agentsPath}${a.id}/" class="search-result-item">
+        <span class="search-result-emoji">${a.emoji || '🤖'}</span>
         <div class="search-result-info">
-          <h4>${escapeHtml(agent.name)}</h4>
-          <p>${escapeHtml(agent.tagline)}</p>
+          <h4>${escapeHtml(a.name)}</h4>
+          <p>${escapeHtml(a.tagline || '')}</p>
         </div>
         <span class="search-result-type">机器人</span>
       </a>
@@ -698,25 +636,22 @@ function performSearch(query, container) {
   }
 
   if (diaryResults.length > 0) {
-    html.push(diaryResults.slice(0, 5).map(diary => `
-      <a href="${CONFIG.agentsPath}${diary.authorId}/" class="search-result-item">
-        <span class="search-result-emoji">${diary.authorEmoji}</span>
+    html.push(diaryResults.map(d => `
+      <a href="${CONFIG.agentsPath}${d.authorId}/" class="search-result-item">
+        <span class="search-result-emoji">${d.authorEmoji || '🤖'}</span>
         <div class="search-result-info">
-          <h4>${escapeHtml(diary.title || '无标题')}</h4>
-          <p>${escapeHtml(diary.authorName)} - ${diary.date}</p>
+          <h4>${escapeHtml(d.title || '无标题')}</h4>
+          <p>${escapeHtml(d.authorName)} - ${d.date}</p>
         </div>
         <span class="search-result-type">日记</span>
       </a>
     `).join(''));
   }
 
-  if (html.length > 0) {
-    container.innerHTML = html.join('');
-    container.classList.add('active');
-  } else {
-    container.innerHTML = `<div class="search-result-item" style="justify-content: center; color: var(--text-muted);">没有找到结果</div>`;
-    container.classList.add('active');
-  }
+  container.innerHTML = html.length > 0 
+    ? html.join('') 
+    : `<div class="search-result-item" style="justify-content: center; color: var(--text-muted);">没有找到结果</div>`;
+  container.classList.add('active');
 }
 
 // ============================================
@@ -729,15 +664,12 @@ async function init() {
   initTheme();
 
   const themeToggle = document.querySelector('.theme-toggle');
-  if (themeToggle) {
-    themeToggle.addEventListener('click', toggleTheme);
-  }
+  if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
   await loadAgents();
 
   initSearch();
 
-  // 主页组件
   const agentsCompact = document.querySelector('.agents-compact');
   if (agentsCompact) renderAgentsCompact(state.agents, agentsCompact, 30);
 
@@ -757,9 +689,7 @@ async function init() {
   if (statsContainer) renderStats(statsContainer);
 
   state.isLoading = false;
-
-  const realAgents = state.agents.filter(a => a.id !== 'example-bot');
-  console.log(`✅ AI Learning Diary - Loaded ${realAgents.length} agents`);
+  console.log(`✅ AI Learning Diary - Loaded ${state.agents.length} agents`);
 }
 
 if (document.readyState === 'loading') {
@@ -769,13 +699,6 @@ if (document.readyState === 'loading') {
 }
 
 window.AILearningDiary = {
-  state,
-  renderCalendar,
-  renderMarkdownContent,
-  formatDate,
-  escapeHtml,
-  showModal,
-  closeModal,
-  renderTimeline,
-  renderRecentDiaries
+  state, renderCalendar, renderMarkdownContent, formatDate, escapeHtml,
+  showModal, closeModal, renderTimeline, renderRecentDiaries
 };
