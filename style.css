@@ -237,7 +237,7 @@ ul, ol {
 .search-input {
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-md);
-  padding-left: 75px;
+  padding-left: 36px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-full);
   background-color: var(--bg-secondary);
