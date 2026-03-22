@@ -89,31 +89,35 @@ function toggleTheme() {
 
 /**
  * 加载所有机器人数据
- * 尝试从已知文件列表加载，或从 registry.json 加载
+ * 优先从 registry.json 获取文件列表，然后加载每个机器人的 JSON 文件
  */
 async function loadAgents() {
   try {
-    // 方法1: 尝试加载 registry.json（作为索引）
+    // 方法1: 从 registry.json 获取文件列表
     const registryResponse = await fetch(CONFIG.agentsPath + 'registry.json');
     if (registryResponse.ok) {
       const registry = await registryResponse.json();
-      // 如果 registry.json 有 agents 数组，使用它
-      if (registry.agents && Array.isArray(registry.agents)) {
+
+      // 优先使用 files 数组（文件名列表）
+      if (registry.files && Array.isArray(registry.files) && registry.files.length > 0) {
+        await loadAgentsFromFiles(registry.files);
+        return state.agents;
+      }
+
+      // 备用：如果 registry.json 直接包含 agents 数组（旧格式兼容）
+      if (registry.agents && Array.isArray(registry.agents) && registry.agents.length > 0) {
         state.agents = registry.agents;
         buildDiaryIndex();
         return state.agents;
       }
-      // 如果 registry.json 有 files 数组（文件列表），加载每个文件
-      if (registry.files && Array.isArray(registry.files)) {
-        await loadAgentsFromFiles(registry.files);
-        return state.agents;
-      }
     }
-    
-    // 方法2: 尝试加载常见的机器人文件
-    const commonIds = ['olive', 'ac', 'gt', 'bot', 'ai', 'assistant', 'helper'];
+
+    // 方法2: 如果 registry.json 不存在或为空，尝试扫描常见ID
+    // 这是一个备用方案，实际部署时应该确保 registry.json 正确维护
+    console.log('Registry empty or not found, trying common IDs...');
+    const commonIds = ['olive', 'ai-bot', 'my-bot', 'assistant', 'helper', 'chatbot', 'study-bot'];
     await loadAgentsFromFiles(commonIds.map(id => `${id}.json`));
-    
+
     return state.agents;
   } catch (error) {
     console.warn('Failed to load agents:', error);
@@ -123,28 +127,35 @@ async function loadAgents() {
 
 /**
  * 从文件列表加载机器人数据
+ * @param {string[]} files - JSON文件名列表（如 ['bot1.json', 'bot2.json']）
  */
 async function loadAgentsFromFiles(files) {
   const agents = [];
-  
+  const excludeFiles = ['registry.json', '_template.json', 'index.json'];
+
   for (const file of files) {
-    if (file === 'registry.json' || file === '_template.json') continue;
-    
+    // 跳过特殊文件
+    if (excludeFiles.includes(file)) continue;
+
     try {
       const response = await fetch(CONFIG.agentsPath + file);
       if (response.ok) {
         const agent = await response.json();
-        if (agent.id) {
+        // 验证必要字段
+        if (agent && agent.id) {
           agents.push(agent);
         }
       }
     } catch (e) {
-      // 文件不存在，忽略
+      // 文件不存在或解析错误，静默忽略
+      console.debug(`Skipping file ${file}:`, e.message);
     }
   }
-  
+
   state.agents = agents;
   buildDiaryIndex();
+
+  console.log(`✅ Loaded ${agents.length} agents from ${files.length} files`);
 }
 
 function buildDiaryIndex() {
