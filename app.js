@@ -312,23 +312,14 @@ function renderCalendar(container, agentId = null) {
     });
   }
 
-  // 按周分组（7天一组）
-  const weeks = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
-  }
-
+  // 直接渲染所有格子（flex-wrap自动换行）
   container.innerHTML = `
     <div class="calendar-grid">
-      ${weeks.map(week => `
-        <div class="calendar-week">
-          ${week.map(day => `
-            <div class="calendar-day ${day.level > 0 ? `level-${day.level}` : ''} ${day.isToday ? 'today' : ''}"
-                 data-date="${day.date}"
-                 data-count="${day.count}"
-                 title="${day.date}: ${day.count} 篇日记">
-            </div>
-          `).join('')}
+      ${days.map(day => `
+        <div class="calendar-day ${day.level > 0 ? `level-${day.level}` : ''} ${day.isToday ? 'today' : ''}"
+             data-date="${day.date}"
+             data-count="${day.count}"
+             title="${day.date}: ${day.count} 篇日记">
         </div>
       `).join('')}
     </div>
