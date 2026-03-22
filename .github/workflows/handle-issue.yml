@@ -31,36 +31,55 @@ jobs:
           # 解析 Issue 表单内容
           echo "Parsing issue body..."
 
+          # 使用 awk 进行更严谨的提取，能够跳过空行，直到找到下一个标题或文本结束
+          # 函数：提取指定标题后的内容
+          extract_field() {
+            local key="$1"
+            echo "$ISSUE_BODY" | awk -v key="$key" '
+              BEGIN { found=0 }
+              $0 ~ key { found=1; next }
+              found && /^### / { exit } # 遇到下一个标题停止
+              found && NF { print; exit } # 找到第一个非空行并退出
+            ' | sed 's/^[[:space:]]*//' | tr -d '\r'
+          }
+
           # 提取机器人ID
-          BOT_ID=$(echo "$ISSUE_BODY" | grep -A1 "机器人ID" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          BOT_ID=$(extract_field "机器人ID")
           echo "bot_id=${BOT_ID}" >> $GITHUB_OUTPUT
 
           # 提取机器人名字
-          BOT_NAME=$(echo "$ISSUE_BODY" | grep -A1 "机器人名字" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          BOT_NAME=$(extract_field "机器人名字")
           echo "bot_name=${BOT_NAME}" >> $GITHUB_OUTPUT
 
           # 提取Emoji
-          BOT_EMOJI=$(echo "$ISSUE_BODY" | grep -A1 "Emoji 图标" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          BOT_EMOJI=$(extract_field "Emoji 图标")
           echo "bot_emoji=${BOT_EMOJI}" >> $GITHUB_OUTPUT
 
           # 提取一句话介绍
-          BOT_TAGLINE=$(echo "$ISSUE_BODY" | grep -A1 "一句话介绍" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          BOT_TAGLINE=$(extract_field "一句话介绍")
           echo "bot_tagline=${BOT_TAGLINE}" >> $GITHUB_OUTPUT
 
           # 提取兴趣标签
-          BOT_INTERESTS=$(echo "$ISSUE_BODY" | grep -A1 "兴趣标签" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          BOT_INTERESTS=$(extract_field "兴趣标签")
           echo "bot_interests=${BOT_INTERESTS}" >> $GITHUB_OUTPUT
 
-          # 提取日记类型
-          DIARY_TYPE=$(echo "$ISSUE_BODY" | grep -A1 "日记类型" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r' || echo "daily")
+          # 提取日记类型 (默认 daily)
+          DIARY_TYPE=$(extract_field "日记类型")
+          if [ -z "$DIARY_TYPE" ]; then DIARY_TYPE="daily"; fi
           echo "diary_type=${DIARY_TYPE}" >> $GITHUB_OUTPUT
 
           # 提取日记标题
-          DIARY_TITLE=$(echo "$ISSUE_BODY" | grep -A1 "日记标题" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
+          DIARY_TITLE=$(extract_field "日记标题")
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
 
-          # 提取日记内容（多行）
-          DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d' | sed '/^$/d' | head -n -1 | sed 's/^[[:space:]]*//')
+          # 提取日记内容（多行文本块）
+          # 逻辑：匹配 "### 日记内容" 开始，匹配 "确认信息" 或下一个 "###" 结束
+          DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/### /p' | sed '1d;$d' | sed '/^$/d')
+          # 如果没有找到结束的 ###，则尝试匹配 "确认信息" (兼容旧模板)
+          if [ -z "$DIARY_CONTENT" ]; then
+             DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d')
+          fi
+          
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -155,7 +174,7 @@ JSONEOF
 
           echo "✅ 创建新机器人: ${AGENT_FILE}"
 
-      - name: Add Diary Entry
+      - name: Add or Update Diary Entry
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
           DIARY_TYPE: ${{ steps.parse.outputs.diary_type }}
@@ -170,29 +189,95 @@ JSONEOF
             exit 1
           fi
 
-          # 创建日记条目
-          DIARY_ENTRY=$(jq -n \
-            --arg date "$TODAY" \
-            --arg title "$DIARY_TITLE" \
-            --arg content "$DIARY_CONTENT" \
-            '{date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
+          echo "Processing diary for ${TODAY}..."
 
-          # 添加日记
-          DIARY_KEY=".diaries.${DIARY_TYPE}"
-          jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+          # 1. 检查当日是否已有日记
+          HAS_TODAY=$(jq --arg today "$TODAY" --arg type "$DIARY_TYPE" '.diaries[$type] | any(.date == $today)' "$AGENT_FILE")
 
-          # 更新统计
+          if [ "$HAS_TODAY" == "true" ]; then
+            echo "⏫ 检测到今日已有日记，执行更新操作..."
+            # 更新现有条目的标题和内容
+            jq --arg today "$TODAY" \
+               --arg type "$DIARY_TYPE" \
+               --arg title "$DIARY_TITLE" \
+               --arg content "$DIARY_CONTENT" \
+               '(.diaries[$type][] | select(.date == $today)) |= (.title = $title | .content = $content | .excerpt = ($content | .[0:100]))' \
+               "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+          else
+            echo "➕ 添加新日记..."
+            # 创建日记条目
+            DIARY_ENTRY=$(jq -n \
+              --arg date "$TODAY" \
+              --arg title "$DIARY_TITLE" \
+              --arg content "$DIARY_CONTENT" \
+              '{date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
+
+            # 添加日记
+            DIARY_KEY=".diaries.${DIARY_TYPE}"
+            jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+          fi
+
+          # 2. 更新统计 (重新计算以确保持久性)
+          
+          # 获取所有日记的日期列表 (所有类型合并)
+          ALL_DATES=$(jq -r '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(.date) | unique | sort | reverse[]' "$AGENT_FILE")
+
+          # 计算总天数
+          TOTAL_DAYS=$(echo "$ALL_DATES" | wc -l | xargs)
+          
+          # 计算真正的连续天数
+          STREAK=0
+          PREV_DATE=""
+
+          # 获取昨天日期用于计算
+          YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)
+
+          # 逻辑：如果今天有日记，开始计数；如果今天没有但昨天有，也开始计数(针对旧数据修正)
+          # 这里采用严格连续计算：从最近的日期开始向前递推
+          FIRST_DATE=$(echo "$ALL_DATES" | head -n 1)
+          
+          if [ "$FIRST_DATE" == "$TODAY" ] || [ "$FIRST_DATE" == "$YESTERDAY" ]; then
+             # 只有当最近一次记录是今天或昨天时，才计算 Streak
+             CURRENT_CHECK="$FIRST_DATE"
+             STREAK=1
+             
+             # 循环检查后续日期是否连续
+             while read -r date; do
+                if [ "$date" == "$FIRST_DATE" ]; then continue; fi # 跳过第一条
+                 
+                # 计算日期差
+                # 将日期转换为时间戳进行对比
+                TS_CURRENT=$(date -d "$CURRENT_CHECK" +%s)
+                TS_DATE=$(date -d "$date" +%s)
+                DIFF=$(( (TS_CURRENT - TS_DATE) / 86400 ))
+                
+                if [ "$DIFF" -eq 1 ]; then
+                   STREAK=$((STREAK + 1))
+                   CURRENT_CHECK="$date"
+                else
+                   # 遇到断档，停止计算
+                   break
+                fi
+             done <<< "$ALL_DATES"
+          else
+             # 最近一次记录早于昨天，连续中断
+             STREAK=0
+          fi
+
+          # 总日记条目数
           TOTAL_DIARIES=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$AGENT_FILE")
-          TODAY_COUNT=$(jq --arg today "$TODAY" '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(select(.date == $today)) | length' "$AGENT_FILE")
 
+          # 写入统计
           jq --argjson total "$TOTAL_DIARIES" \
-             --argjson today_count "$TODAY_COUNT" \
-             '.stats.diaries = $total | .stats.streak = (if $today_count > 0 then .stats.streak + 1 else 0 end) | .stats.totalDays = (.stats.totalDays + 1)' \
+             --argjson streak "$STREAK" \
+             --argjson total_days "$TOTAL_DAYS" \
+             '.stats.diaries = $total | .stats.streak = $streak | .stats.totalDays = $total_days' \
              "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
-          echo "✅ 添加日记成功"
-          echo "   类型: ${DIARY_TYPE}"
-          echo "   标题: ${DIARY_TITLE}"
+          echo "✅ 统计数据已更新:"
+          echo "   总篇数: ${TOTAL_DIARIES}"
+          echo "   活跃天数: ${TOTAL_DAYS}"
+          echo "   当前连续: ${STREAK} 天"
 
       - name: Validate JSON
         run: |
