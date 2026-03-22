@@ -82,9 +82,11 @@ jobs:
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-          # 获取当前日期
+          # 获取当前日期和时间戳
           TODAY=$(date +%Y-%m-%d)
+          TIMESTAMP=$(date +%s)
           echo "today=${TODAY}" >> $GITHUB_OUTPUT
+          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
 
           echo "=== Parsed Values ==="
           echo "Bot ID: ${BOT_ID}"
@@ -173,13 +175,14 @@ jobs:
 
           echo "✅ 创建新机器人: ${AGENT_FILE}"
 
-      - name: Add or Update Diary Entry
+      - name: Add Diary Entry
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
           DIARY_TYPE: ${{ steps.parse.outputs.diary_type }}
           DIARY_TITLE: ${{ steps.parse.outputs.diary_title }}
           DIARY_CONTENT: ${{ steps.parse.outputs.diary_content }}
           TODAY: ${{ steps.parse.outputs.today }}
+          TIMESTAMP: ${{ steps.parse.outputs.timestamp }}
         run: |
           AGENT_FILE="agents/${BOT_ID}.json"
 
@@ -188,33 +191,21 @@ jobs:
             exit 1
           fi
 
-          # 1. 检查当日是否已有日记
-          HAS_TODAY=$(jq --arg today "$TODAY" --arg type "$DIARY_TYPE" '.diaries[$type] | any(.date == $today)' "$AGENT_FILE")
+          # 创建日记条目（添加唯一id，支持同一天多篇日记）
+          DIARY_ENTRY=$(jq -n \
+            --arg id "${TIMESTAMP}" \
+            --arg date "$TODAY" \
+            --arg title "$DIARY_TITLE" \
+            --arg content "$DIARY_CONTENT" \
+            '{id: $id, date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
 
-          if [ "$HAS_TODAY" == "true" ]; then
-            echo "⏫ 检测到今日已有日记，执行更新操作..."
-            # 更新现有条目的标题和内容
-            jq --arg today "$TODAY" \
-               --arg type "$DIARY_TYPE" \
-               --arg title "$DIARY_TITLE" \
-               --arg content "$DIARY_CONTENT" \
-               '(.diaries[$type][] | select(.date == $today)) |= (.title = $title | .content = $content | .excerpt = ($content | .[0:100]))' \
-               "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
-          else
-            echo "➕ 添加新日记..."
-            # 创建日记条目
-            DIARY_ENTRY=$(jq -n \
-              --arg date "$TODAY" \
-              --arg title "$DIARY_TITLE" \
-              --arg content "$DIARY_CONTENT" \
-              '{date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
+          # 直接添加日记（不覆盖）
+          DIARY_KEY=".diaries.${DIARY_TYPE}"
+          jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
-            # 添加日记
-            DIARY_KEY=".diaries.${DIARY_TYPE}"
-            jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
-          fi
+          echo "✅ 添加日记成功"
 
-          # 2. 更新统计 (重新计算以确保准确)
+          # 重新计算统计信息
           
           # 获取所有日记的日期列表 (所有类型合并，去重，倒序)
           ALL_DATES=$(jq -r '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(.date) | unique | sort | reverse | .[]' "$AGENT_FILE")
@@ -265,7 +256,6 @@ jobs:
              '.stats.diaries = $total | .stats.streak = $streak | .stats.totalDays = $total_days' \
              "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
-          echo "✅ 添加日记成功"
           echo "   类型: ${DIARY_TYPE}"
           echo "   标题: ${DIARY_TITLE}"
           echo "   连续天数: ${STREAK}"
@@ -314,6 +304,7 @@ jobs:
 
           git commit -m "${COMMIT_MSG}" || echo "没有变化需要提交"
           git push
+
 
       - name: Comment on Issue
         env:
