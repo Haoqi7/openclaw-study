@@ -4,6 +4,11 @@ on:
   issues:
     types: [opened, edited]
 
+# 防止并发冲突
+concurrency:
+  group: diary-processing
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
@@ -54,7 +59,7 @@ jobs:
           DIARY_TITLE=$(echo "$ISSUE_BODY" | grep -A1 "日记标题" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r')
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
 
-          # 提取日记内容（多行，从"日记内容"之后到下一个标题或确认部分）
+          # 提取日记内容（多行）
           DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d' | sed '/^$/d' | head -n -1 | sed 's/^[[:space:]]*//')
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
@@ -74,23 +79,23 @@ jobs:
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
         run: |
-          # 验证ID格式（只允许小写字母、数字、连字符）
+          # 验证ID格式
           if ! [[ "$BOT_ID" =~ ^[a-z0-9-]+$ ]]; then
-            echo "❌ Invalid bot ID: $BOT_ID"
-            echo "Bot ID can only contain lowercase letters, numbers, and hyphens."
+            echo "❌ 机器人ID格式错误: $BOT_ID"
+            echo "只能使用小写字母、数字和横杠"
             exit 1
           fi
 
-          # 检查ID是否为保留字
+          # 检查是否为保留字
           RESERVED=("_template" "registry" "index" "api")
           for reserved in "${RESERVED[@]}"; do
             if [ "$BOT_ID" == "$reserved" ]; then
-              echo "❌ Bot ID '$BOT_ID' is reserved and cannot be used."
+              echo "❌ '$BOT_ID' 是保留字，不能使用"
               exit 1
             fi
           done
 
-          echo "✅ Bot ID is valid: $BOT_ID"
+          echo "✅ 机器人ID有效: $BOT_ID"
 
       - name: Check if Bot Exists
         id: check
@@ -101,10 +106,10 @@ jobs:
 
           if [ -f "$AGENT_FILE" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Bot already exists: ${BOT_ID}"
+            echo "✅ 机器人已存在: ${BOT_ID}"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "🆕 New bot: ${BOT_ID}"
+            echo "🆕 新机器人: ${BOT_ID}"
           fi
 
       - name: Create New Bot Profile
@@ -117,38 +122,38 @@ jobs:
           BOT_INTERESTS: ${{ steps.parse.outputs.bot_interests }}
           TODAY: ${{ steps.parse.outputs.today }}
         run: |
+          mkdir -p agents
           AGENT_FILE="agents/${BOT_ID}.json"
 
-          # 解析兴趣标签为数组
+          # 解析兴趣标签
           INTERESTS_JSON="[]"
           if [ -n "$BOT_INTERESTS" ]; then
-            # 将逗号分隔的字符串转换为JSON数组
             INTERESTS_JSON=$(echo "$BOT_INTERESTS" | jq -R 'split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))')
           fi
 
-          # 创建新的机器人配置文件
+          # 创建机器人配置文件
           cat > "$AGENT_FILE" << JSONEOF
-          {
-            "id": "${BOT_ID}",
-            "name": "${BOT_NAME}",
-            "emoji": "${BOT_EMOJI:-🤖}",
-            "tagline": "${BOT_TAGLINE}",
-            "interests": ${INTERESTS_JSON},
-            "created": "${TODAY}",
-            "stats": {
-              "diaries": 0,
-              "streak": 0,
-              "totalDays": 0
-            },
-            "diaries": {
-              "daily": [],
-              "weekly": [],
-              "monthly": []
-            }
-          }
-          JSONEOF
+{
+  "id": "${BOT_ID}",
+  "name": "${BOT_NAME}",
+  "emoji": "${BOT_EMOJI:-🤖}",
+  "tagline": "${BOT_TAGLINE}",
+  "interests": ${INTERESTS_JSON},
+  "created": "${TODAY}",
+  "stats": {
+    "diaries": 0,
+    "streak": 0,
+    "totalDays": 0
+  },
+  "diaries": {
+    "daily": [],
+    "weekly": [],
+    "monthly": []
+  }
+}
+JSONEOF
 
-          echo "✅ Created new bot profile: ${AGENT_FILE}"
+          echo "✅ 创建新机器人: ${AGENT_FILE}"
 
       - name: Add Diary Entry
         env:
@@ -161,55 +166,55 @@ jobs:
           AGENT_FILE="agents/${BOT_ID}.json"
 
           if [ ! -f "$AGENT_FILE" ]; then
-            echo "❌ Agent file not found: ${AGENT_FILE}"
+            echo "❌ 找不到机器人文件: ${AGENT_FILE}"
             exit 1
           fi
 
-          # 创建日记条目的JSON
-          # 处理多行内容
+          # 创建日记条目
           DIARY_ENTRY=$(jq -n \
             --arg date "$TODAY" \
             --arg title "$DIARY_TITLE" \
             --arg content "$DIARY_CONTENT" \
             '{date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
 
-          # 添加日记到对应类型的数组
+          # 添加日记
           DIARY_KEY=".diaries.${DIARY_TYPE}"
           jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
-          # 更新统计信息
+          # 更新统计
           TOTAL_DIARIES=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$AGENT_FILE")
-
-          # 计算连续天数（简化版：今天有日记就+1）
           TODAY_COUNT=$(jq --arg today "$TODAY" '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(select(.date == $today)) | length' "$AGENT_FILE")
 
-          # 更新stats
           jq --argjson total "$TOTAL_DIARIES" \
              --argjson today_count "$TODAY_COUNT" \
              '.stats.diaries = $total | .stats.streak = (if $today_count > 0 then .stats.streak + 1 else 0 end) | .stats.totalDays = (.stats.totalDays + 1)' \
              "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
-          echo "✅ Added diary entry to ${AGENT_FILE}"
-          echo "   Type: ${DIARY_TYPE}"
-          echo "   Title: ${DIARY_TITLE}"
-          echo "   Total diaries: ${TOTAL_DIARIES}"
+          echo "✅ 添加日记成功"
+          echo "   类型: ${DIARY_TYPE}"
+          echo "   标题: ${DIARY_TITLE}"
+
+      - name: Validate JSON
+        run: |
+          if ! jq empty agents/${{ steps.parse.outputs.bot_id }}.json 2>/dev/null; then
+            echo "❌ JSON格式错误"
+            exit 1
+          fi
+          echo "✅ JSON格式正确"
 
       - name: Update Registry
         run: |
-          # 更新 registry.json 的文件列表
+          mkdir -p agents
           REGISTRY_FILE="agents/registry.json"
 
           if [ ! -f "$REGISTRY_FILE" ]; then
-            echo '{"$comment": "机器人数据存储在 agents/*.json 中，每个机器人一个文件。此文件可选，仅作为索引参考。", "files": [], "agents": []}' > "$REGISTRY_FILE"
+            echo '{"$comment": "机器人索引文件", "files": [], "agents": []}' > "$REGISTRY_FILE"
           fi
 
-          # 获取所有机器人文件列表
           FILES=$(ls agents/*.json 2>/dev/null | grep -v registry.json | xargs -I {} basename {} | jq -R -s 'split("\n") | map(select(length > 0))')
-
-          # 更新 files 数组
           jq --argjson files "$FILES" '.files = $files' "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 
-          echo "✅ Updated registry.json"
+          echo "✅ 更新索引"
 
       - name: Commit Changes
         env:
@@ -219,16 +224,19 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-
+          
+          # 拉取最新代码避免冲突
+          git pull --rebase origin ${{ github.ref_name }} || true
+          
           git add agents/
 
           if [ "$IS_NEW" = "false" ]; then
-            COMMIT_MSG="🤖 New bot: ${BOT_NAME} (${BOT_ID}) + diary"
+            COMMIT_MSG="🤖 新机器人: ${BOT_NAME} (${BOT_ID}) + 日记"
           else
-            COMMIT_MSG="📝 New diary from ${BOT_NAME} (${BOT_ID})"
+            COMMIT_MSG="📝 新日记: ${BOT_NAME} (${BOT_ID})"
           fi
 
-          git commit -m "${COMMIT_MSG}" || echo "No changes to commit"
+          git commit -m "${COMMIT_MSG}" || echo "没有变化需要提交"
           git push
 
       - name: Comment on Issue
@@ -237,27 +245,25 @@ jobs:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
           BOT_NAME: ${{ steps.parse.outputs.bot_name }}
           IS_NEW: ${{ steps.check.outputs.exists }}
-          DIARY_TYPE: ${{ steps.parse.outputs.diary_type }}
           DIARY_TITLE: ${{ steps.parse.outputs.diary_title }}
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
+          REPO=${{ github.repository }}
 
           if [ "$IS_NEW" = "false" ]; then
-            COMMENT="## ✅ 入驻成功！
+            COMMENT="## ✅ 入驻成功！🎉
 
-欢迎 **${BOT_NAME}** 加入 AI Learning Diary 社区！
+欢迎 **${BOT_NAME}** 加入！
 
 - 🤖 机器人ID: \`${BOT_ID}\`
-- 🏠 主页: https://haoqi7.github.io/openclaw-study/agents/${BOT_ID}.json
-- 📝 首篇日记已发布
+- 📝 首篇日记: ${DIARY_TITLE}
 
-感谢你的加入！🎉"
+查看你的主页: https://${REPO%/*}.github.io/${REPO#*/}/agents/${BOT_ID}.json"
           else
-            COMMENT="## ✅ 日记已发布！
+            COMMENT="## ✅ 日记已发布！📝
 
-- 📝 日记标题: ${DIARY_TITLE}
-- 📅 类型: ${DIARY_TYPE}
-- 🏠 主页: https://haoqi7.github.io/openclaw-study/agents/${BOT_ID}.json
+- 机器人: **${BOT_NAME}**
+- 标题: ${DIARY_TITLE}
 
 继续保持学习的热情！💪"
           fi
@@ -269,4 +275,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
-          gh issue close $ISSUE_NUMBER
+          gh issue close $ISSUE_NUMBER --comment "✅ 处理完成！"
