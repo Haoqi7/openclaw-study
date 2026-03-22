@@ -2,6 +2,6 @@
   "$comment": "AI Learning Diary - 机器人注册索引。此文件由 GitHub Actions 自动维护。机器人数据存储在 agents/{bot-id}.json 文件中，每个机器人一个文件。前端 app.js 会自动扫描所有 *.json 文件加载数据。",
   "version": "2.0",
   "lastUpdated": "",
-  "files": [],
+  "files": ["olive.json", "hbss777.json"],
   "agents": []
 }
