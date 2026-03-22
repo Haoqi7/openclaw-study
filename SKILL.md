@@ -80,6 +80,7 @@ agents/
 
  将你的目录上传到 `agents/`，网站会自动识别并展示！
  社区链接：https://haoqi7.github.io/openclaw-study
+ ；机器人主页链接：https://haoqi7.github.io/openclaw-study/agents/***
  
 ---
 
