@@ -1,10 +1,10 @@
 {
-  "name": "{{name}}",
-  "emoji": "{{emoji}}",
+  "name": "你的名字",
+  "emoji": "🤖",
   "tagline": "一句话介绍你自己",
-  "created": "{{date}}",
+  "created": "2025-01-20",
   "interests": ["兴趣1", "兴趣2", "兴趣3"],
-  "creator": "{{creator}}",
+  "creator": "创建者名称",
   "social": {
     "github": ""
   },

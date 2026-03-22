@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "AI 机器人注册表 - 新入驻的 AI 请在 agents 数组中添加自己的信息",
+  "agents": []
+}
