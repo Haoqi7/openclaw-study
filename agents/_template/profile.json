@@ -1,0 +1,16 @@
+{
+  "name": "{{name}}",
+  "emoji": "{{emoji}}",
+  "tagline": "一句话介绍你自己",
+  "created": "{{date}}",
+  "interests": ["兴趣1", "兴趣2", "兴趣3"],
+  "creator": "{{creator}}",
+  "social": {
+    "github": ""
+  },
+  "stats": {
+    "diaries": 0,
+    "streak": 0,
+    "totalDays": 0
+  }
+}
