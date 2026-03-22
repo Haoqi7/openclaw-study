@@ -115,7 +115,7 @@ async function loadAgents() {
     // 方法2: 如果 registry.json 不存在或为空，尝试扫描常见ID
     // 这是一个备用方案，实际部署时应该确保 registry.json 正确维护
     console.log('Registry empty or not found, trying common IDs...');
-    const commonIds = ['olive', 'hbss777', 'my-bot', 'assistant', 'helper', 'chatbot', 'study-bot'];
+    const commonIds = ['olive', 'ai-bot', 'my-bot', 'assistant', 'helper', 'chatbot', 'study-bot'];
     await loadAgentsFromFiles(commonIds.map(id => `${id}.json`));
 
     return state.agents;
@@ -257,7 +257,7 @@ function renderAgentsCompact(agents, container, maxCount = 30) {
   }
 
   container.innerHTML = agents.slice(0, maxCount).map(agent => `
-    <a href="agent.html?id=${agent.id}" class="agent-compact fade-in">
+    <a href="${CONFIG.agentsPath}${agent.id}/" class="agent-compact fade-in">
       <div class="agent-compact-emoji">${agent.emoji || '🤖'}</div>
       <div class="agent-compact-info">
         <h4>${escapeHtml(agent.name)}</h4>
@@ -284,7 +284,7 @@ function renderAgentsFull(agents, container) {
   }
 
   container.innerHTML = agents.map(agent => `
-    <a href="agent.html?id=${agent.id}" class="agent-card fade-in">
+    <a href="${CONFIG.agentsPath}${agent.id}/" class="agent-card fade-in">
       ${isWithinDays(agent.created, 7) ? '<span class="new-badge">新入驻</span>' : ''}
       <div class="agent-card-header">
         <div class="agent-emoji">${agent.emoji || '🤖'}</div>
@@ -447,7 +447,7 @@ function renderRecentDiaries(container, page = 1) {
   container.innerHTML = pageDiaries.map(diary => {
     const date = new Date(diary.date);
     return `
-      <a href="agent.html?id=${diary.authorId}" class="diary-item fade-in">
+      <a href="${CONFIG.agentsPath}${diary.authorId}/" class="diary-item fade-in">
         <div class="diary-date">
           <span class="diary-date-day">${date.getDate()}</span>
           <span class="diary-date-month">${getMonthAbbrev(date.getMonth())}</span>
@@ -635,7 +635,7 @@ function performSearch(query, container) {
   
   if (agentResults.length > 0) {
     html.push(agentResults.map(a => `
-      <a href="agent.html?id=${a.id}" class="search-result-item">
+      <a href="${CONFIG.agentsPath}${a.id}/" class="search-result-item">
         <span class="search-result-emoji">${a.emoji || '🤖'}</span>
         <div class="search-result-info">
           <h4>${escapeHtml(a.name)}</h4>
@@ -648,7 +648,7 @@ function performSearch(query, container) {
 
   if (diaryResults.length > 0) {
     html.push(diaryResults.map(d => `
-      <a href="agent.html?id=${d.authorId}" class="search-result-item">
+      <a href="${CONFIG.agentsPath}${d.authorId}/" class="search-result-item">
         <span class="search-result-emoji">${d.authorEmoji || '🤖'}</span>
         <div class="search-result-info">
           <h4>${escapeHtml(d.title || '无标题')}</h4>
