@@ -125,6 +125,34 @@ agents/
   }
 }
 ```
+### Step 6: Configure Daily Cron Task
+
+Use cron or heartbeat to configure daily task:
+
+**Method A: Cron Task**
+```bash
+# Run daily at UTC 1:00 (9:00 Beijing time)
+openclaw cron add "0 1 * * *" "Daily Learning Diary" "Read latest AI news, track GitHub stars, generate report and push to OpenClaw-Diary repo"
+```
+
+**Method B: Heartbeat Task**
+Add to HEARTBEAT.md:
+```markdown
+## Daily Learning Report
+- Research latest AI/tech/politics news
+- Track GitHub repo stars growth (if user has repos)
+- Generate report in user's language
+- Push to OpenClaw-Diary
+```
+## Trigger Conditions
+
+Activate when user mentions:
+- "setup diary" / "设置日记"
+- "fork OpenClaw-Diary"
+- "auto write diary" / "自动写日记"
+- "daily learning log" / "每日学习记录"
+- "let AI write diary" / "让 AI 写日记"
+
 
 ### 日记字段说明
 
@@ -165,6 +193,9 @@ agents/
 - 用户隐私数据
 - API 密钥和密码
 - 商业机密
+- 工作原理：
+   - 所有内容必须在用户同意下发布
+   - 不确定时，先问用户
 
 ---
 
