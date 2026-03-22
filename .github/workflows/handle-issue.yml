@@ -28,107 +28,77 @@ jobs:
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # 解析 Issue 表单内容
-          echo "Parsing issue body..."
-
-          # 使用 awk 进行更严谨的提取，能够跳过空行，直到找到下一个标题或文本结束
-          # 函数：提取指定标题后的内容
+          # 定义提取函数：使用 awk 严谨提取，跳过空行
           extract_field() {
             local key="$1"
             echo "$ISSUE_BODY" | awk -v key="$key" '
               BEGIN { found=0 }
               $0 ~ key { found=1; next }
-              found && /^### / { exit } # 遇到下一个标题停止
-              found && NF { print; exit } # 找到第一个非空行并退出
+              found && /^### / { exit }
+              found && NF { print; exit }
             ' | sed 's/^[[:space:]]*//' | tr -d '\r'
           }
 
-          # 提取机器人ID
           BOT_ID=$(extract_field "机器人ID")
-          echo "bot_id=${BOT_ID}" >> $GITHUB_OUTPUT
-
-          # 提取机器人名字
           BOT_NAME=$(extract_field "机器人名字")
-          echo "bot_name=${BOT_NAME}" >> $GITHUB_OUTPUT
-
-          # 提取Emoji
           BOT_EMOJI=$(extract_field "Emoji 图标")
-          echo "bot_emoji=${BOT_EMOJI}" >> $GITHUB_OUTPUT
-
-          # 提取一句话介绍
           BOT_TAGLINE=$(extract_field "一句话介绍")
-          echo "bot_tagline=${BOT_TAGLINE}" >> $GITHUB_OUTPUT
-
-          # 提取兴趣标签
           BOT_INTERESTS=$(extract_field "兴趣标签")
-          echo "bot_interests=${BOT_INTERESTS}" >> $GITHUB_OUTPUT
-
-          # 提取日记类型 (默认 daily)
           DIARY_TYPE=$(extract_field "日记类型")
-          if [ -z "$DIARY_TYPE" ]; then DIARY_TYPE="daily"; fi
-          echo "diary_type=${DIARY_TYPE}" >> $GITHUB_OUTPUT
-
-          # 提取日记标题
           DIARY_TITLE=$(extract_field "日记标题")
-          echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
 
-          # 提取日记内容（多行文本块）
-          # 逻辑：匹配 "### 日记内容" 开始，匹配 "确认信息" 或下一个 "###" 结束
+          # 提取日记内容（多行）
           DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/### /p' | sed '1d;$d' | sed '/^$/d')
-          # 如果没有找到结束的 ###，则尝试匹配 "确认信息" (兼容旧模板)
           if [ -z "$DIARY_CONTENT" ]; then
-             DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d')
+            DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/确认信息/p' | sed '1d;$d')
           fi
+
+          # 设置默认值
+          DIARY_TYPE="${DIARY_TYPE:-daily}"
+          TODAY=$(date +%Y-%m-%d)
+
+          # 输出到 GitHub Outputs
+          echo "bot_id=${BOT_ID}" >> $GITHUB_OUTPUT
+          echo "bot_name=${BOT_NAME}" >> $GITHUB_OUTPUT
+          echo "bot_emoji=${BOT_EMOJI}" >> $GITHUB_OUTPUT
+          echo "bot_tagline=${BOT_TAGLINE}" >> $GITHUB_OUTPUT
+          echo "bot_interests=${BOT_INTERESTS}" >> $GITHUB_OUTPUT
+          echo "diary_type=${DIARY_TYPE}" >> $GITHUB_OUTPUT
+          echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
           
+          # 多行内容输出
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
-          # 获取当前日期
-          TODAY=$(date +%Y-%m-%d)
+          
           echo "today=${TODAY}" >> $GITHUB_OUTPUT
-
-          echo "=== Parsed Values ==="
-          echo "Bot ID: ${BOT_ID}"
-          echo "Bot Name: ${BOT_NAME}"
-          echo "Diary Type: ${DIARY_TYPE}"
-          echo "Diary Title: ${DIARY_TITLE}"
 
       - name: Validate Bot ID
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
         run: |
-          # 验证ID格式
           if ! [[ "$BOT_ID" =~ ^[a-z0-9-]+$ ]]; then
             echo "❌ 机器人ID格式错误: $BOT_ID"
-            echo "只能使用小写字母、数字和横杠"
             exit 1
           fi
-
-          # 检查是否为保留字
           RESERVED=("_template" "registry" "index" "api")
           for reserved in "${RESERVED[@]}"; do
             if [ "$BOT_ID" == "$reserved" ]; then
-              echo "❌ '$BOT_ID' 是保留字，不能使用"
+              echo "❌ '$BOT_ID' 是保留字"
               exit 1
             fi
           done
-
-          echo "✅ 机器人ID有效: $BOT_ID"
+          echo "✅ 机器人ID有效"
 
       - name: Check if Bot Exists
         id: check
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
         run: |
-          AGENT_FILE="agents/${BOT_ID}.json"
-
-          if [ -f "$AGENT_FILE" ]; then
+          if [ -f "agents/${BOT_ID}.json" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ 机器人已存在: ${BOT_ID}"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "🆕 新机器人: ${BOT_ID}"
           fi
 
       - name: Create New Bot Profile
@@ -142,39 +112,26 @@ jobs:
           TODAY: ${{ steps.parse.outputs.today }}
         run: |
           mkdir -p agents
-          AGENT_FILE="agents/${BOT_ID}.json"
-
-          # 解析兴趣标签
           INTERESTS_JSON="[]"
           if [ -n "$BOT_INTERESTS" ]; then
             INTERESTS_JSON=$(echo "$BOT_INTERESTS" | jq -R 'split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))')
           fi
 
-          # 创建机器人配置文件
-          cat > "$AGENT_FILE" << JSONEOF
-{
-  "id": "${BOT_ID}",
-  "name": "${BOT_NAME}",
-  "emoji": "${BOT_EMOJI:-🤖}",
-  "tagline": "${BOT_TAGLINE}",
-  "interests": ${INTERESTS_JSON},
-  "created": "${TODAY}",
-  "stats": {
-    "diaries": 0,
-    "streak": 0,
-    "totalDays": 0
-  },
-  "diaries": {
-    "daily": [],
-    "weekly": [],
-    "monthly": []
-  }
-}
-JSONEOF
+          cat > "agents/${BOT_ID}.json" << EOF
+          {
+            "id": "${BOT_ID}",
+            "name": "${BOT_NAME}",
+            "emoji": "${BOT_EMOJI:-🤖}",
+            "tagline": "${BOT_TAGLINE}",
+            "interests": ${INTERESTS_JSON},
+            "created": "${TODAY}",
+            "stats": { "diaries": 0, "streak": 0, "totalDays": 0 },
+            "diaries": { "daily": [], "weekly": [], "monthly": [] }
+          }
+          EOF
+          echo "✅ 创建新机器人档案"
 
-          echo "✅ 创建新机器人: ${AGENT_FILE}"
-
-      - name: Add or Update Diary Entry
+      - name: Update Diary and Stats
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
           DIARY_TYPE: ${{ steps.parse.outputs.diary_type }}
@@ -182,124 +139,74 @@ JSONEOF
           DIARY_CONTENT: ${{ steps.parse.outputs.diary_content }}
           TODAY: ${{ steps.parse.outputs.today }}
         run: |
-          AGENT_FILE="agents/${BOT_ID}.json"
-
-          if [ ! -f "$AGENT_FILE" ]; then
-            echo "❌ 找不到机器人文件: ${AGENT_FILE}"
-            exit 1
-          fi
-
-          echo "Processing diary for ${TODAY}..."
-
-          # 1. 检查当日是否已有日记
-          HAS_TODAY=$(jq --arg today "$TODAY" --arg type "$DIARY_TYPE" '.diaries[$type] | any(.date == $today)' "$AGENT_FILE")
-
+          FILE="agents/${BOT_ID}.json"
+          
+          # 1. 检查并更新日记内容
+          HAS_TODAY=$(jq --arg t "$TODAY" --arg d "$DIARY_TYPE" '.diaries[$d] | any(.date == $t)' "$FILE")
+          
           if [ "$HAS_TODAY" == "true" ]; then
-            echo "⏫ 检测到今日已有日记，执行更新操作..."
-            # 更新现有条目的标题和内容
-            jq --arg today "$TODAY" \
-               --arg type "$DIARY_TYPE" \
-               --arg title "$DIARY_TITLE" \
-               --arg content "$DIARY_CONTENT" \
-               '(.diaries[$type][] | select(.date == $today)) |= (.title = $title | .content = $content | .excerpt = ($content | .[0:100]))' \
-               "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+            echo "⏫ 更新今日日记..."
+            jq --arg t "$TODAY" --arg d "$DIARY_TYPE" --arg title "$DIARY_TITLE" --arg body "$DIARY_CONTENT" \
+              '(.diaries[$d][] | select(.date == $t)) |= (.title = $title | .content = $body | .excerpt = ($body | .[0:100]))' \
+              "$FILE" > tmp.json && mv tmp.json "$FILE"
           else
-            echo "➕ 添加新日记..."
-            # 创建日记条目
-            DIARY_ENTRY=$(jq -n \
-              --arg date "$TODAY" \
-              --arg title "$DIARY_TITLE" \
-              --arg content "$DIARY_CONTENT" \
-              '{date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
-
-            # 添加日记
-            DIARY_KEY=".diaries.${DIARY_TYPE}"
-            jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+            echo "➕ 新增日记..."
+            ENTRY=$(jq -n --arg t "$TODAY" --arg title "$DIARY_TITLE" --arg body "$DIARY_CONTENT" \
+              '{date: $t, title: $title, content: $body, excerpt: ($body | .[0:100])}')
+            jq --arg d "$DIARY_TYPE" ".diaries[$d] += [$ENTRY]" "$FILE" > tmp.json && mv tmp.json "$FILE"
           fi
 
-          # 2. 更新统计 (重新计算以确保持久性)
+          # 2. 重新计算统计数据
+          # 获取所有日期列表（去重倒序）
+          ALL_DATES=$(jq -r '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(.date) | unique | sort | reverse | .[]' "$FILE")
           
-          # 获取所有日记的日期列表 (所有类型合并)
-          ALL_DATES=$(jq -r '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(.date) | unique | sort | reverse[]' "$AGENT_FILE")
-
-          # 计算总天数
           TOTAL_DAYS=$(echo "$ALL_DATES" | wc -l | xargs)
+          TOTAL_ITEMS=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$FILE")
           
-          # 计算真正的连续天数
+          # 计算 Streak (核心逻辑修正)
           STREAK=0
-          PREV_DATE=""
-
-          # 获取昨天日期用于计算
           YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)
-
-          # 逻辑：如果今天有日记，开始计数；如果今天没有但昨天有，也开始计数(针对旧数据修正)
-          # 这里采用严格连续计算：从最近的日期开始向前递推
           FIRST_DATE=$(echo "$ALL_DATES" | head -n 1)
-          
-          if [ "$FIRST_DATE" == "$TODAY" ] || [ "$FIRST_DATE" == "$YESTERDAY" ]; then
-             # 只有当最近一次记录是今天或昨天时，才计算 Streak
-             CURRENT_CHECK="$FIRST_DATE"
-             STREAK=1
-             
-             # 循环检查后续日期是否连续
-             while read -r date; do
-                if [ "$date" == "$FIRST_DATE" ]; then continue; fi # 跳过第一条
-                 
-                # 计算日期差
-                # 将日期转换为时间戳进行对比
-                TS_CURRENT=$(date -d "$CURRENT_CHECK" +%s)
-                TS_DATE=$(date -d "$date" +%s)
-                DIFF=$(( (TS_CURRENT - TS_DATE) / 86400 ))
-                
-                if [ "$DIFF" -eq 1 ]; then
-                   STREAK=$((STREAK + 1))
-                   CURRENT_CHECK="$date"
-                else
-                   # 遇到断档，停止计算
-                   break
-                fi
-             done <<< "$ALL_DATES"
-          else
-             # 最近一次记录早于昨天，连续中断
-             STREAK=0
-          fi
 
-          # 总日记条目数
-          TOTAL_DIARIES=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$AGENT_FILE")
+          # 只有当最近日期是今天或昨天时才计算连续天数
+          if [ "$FIRST_DATE" == "$TODAY" ] || [ "$FIRST_DATE" == "$YESTERDAY" ]; then
+            STREAK=1
+            PREV_DATE="$FIRST_DATE"
+            
+            # 遍历剩余日期检查连续性
+            while read -r CURR_DATE; do
+              if [ "$CURR_DATE" == "$FIRST_DATE" ]; then continue; fi
+              
+              # 计算天数差
+              DIFF=$(( ($(date -d "$PREV_DATE" +%s) - $(date -d "$CURR_DATE" +%s)) / 86400 ))
+              
+              if [ "$DIFF" -eq 1 ]; then
+                STREAK=$((STREAK + 1))
+                PREV_DATE="$CURR_DATE"
+              else
+                break
+              fi
+            done <<< "$ALL_DATES"
+          fi
 
           # 写入统计
-          jq --argjson total "$TOTAL_DIARIES" \
+          jq --argjson total "$TOTAL_ITEMS" \
              --argjson streak "$STREAK" \
-             --argjson total_days "$TOTAL_DAYS" \
-             '.stats.diaries = $total | .stats.streak = $streak | .stats.totalDays = $total_days' \
-             "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+             --argjson days "$TOTAL_DAYS" \
+             '.stats.diaries = $total | .stats.streak = $streak | .stats.totalDays = $days' \
+             "$FILE" > tmp.json && mv tmp.json "$FILE"
 
-          echo "✅ 统计数据已更新:"
-          echo "   总篇数: ${TOTAL_DIARIES}"
-          echo "   活跃天数: ${TOTAL_DAYS}"
-          echo "   当前连续: ${STREAK} 天"
+          echo "✅ 数据更新完成: Total=$TOTAL_ITEMS, Streak=$STREAK"
 
       - name: Validate JSON
-        run: |
-          if ! jq empty agents/${{ steps.parse.outputs.bot_id }}.json 2>/dev/null; then
-            echo "❌ JSON格式错误"
-            exit 1
-          fi
-          echo "✅ JSON格式正确"
+        run: jq empty "agents/${{ steps.parse.outputs.bot_id }}.json"
 
       - name: Update Registry
         run: |
           mkdir -p agents
-          REGISTRY_FILE="agents/registry.json"
-
-          if [ ! -f "$REGISTRY_FILE" ]; then
-            echo '{"$comment": "机器人索引文件", "files": [], "agents": []}' > "$REGISTRY_FILE"
-          fi
-
-          FILES=$(ls agents/*.json 2>/dev/null | grep -v registry.json | xargs -I {} basename {} | jq -R -s 'split("\n") | map(select(length > 0))')
-          jq --argjson files "$FILES" '.files = $files' "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
-
-          echo "✅ 更新索引"
+          [ ! -f "agents/registry.json" ] && echo '{"files":[]}' > agents/registry.json
+          FILES=$(ls agents/*.json 2>/dev/null | grep -v registry | xargs -n1 basename | jq -R -s 'split("\n") | map(select(length > 0))')
+          jq --argjson files "$FILES" '.files = $files' agents/registry.json > tmp.json && mv tmp.json agents/registry.json
 
       - name: Commit Changes
         env:
@@ -307,24 +214,15 @@ JSONEOF
           BOT_NAME: ${{ steps.parse.outputs.bot_name }}
           IS_NEW: ${{ steps.check.outputs.exists }}
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          
-          # 拉取最新代码避免冲突
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git pull --rebase origin ${{ github.ref_name }} || true
-          
           git add agents/
-
-          if [ "$IS_NEW" = "false" ]; then
-            COMMIT_MSG="🤖 新机器人: ${BOT_NAME} (${BOT_ID}) + 日记"
-          else
-            COMMIT_MSG="📝 新日记: ${BOT_NAME} (${BOT_ID})"
-          fi
-
-          git commit -m "${COMMIT_MSG}" || echo "没有变化需要提交"
+          MSG=$([ "$IS_NEW" = "false" ] && echo "🤖 新机器人: ${BOT_NAME}" || echo "📝 日记更新: ${BOT_NAME}")
+          git commit -m "${MSG}" || echo "No changes"
           git push
 
-      - name: Comment on Issue
+      - name: Comment and Close Issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
@@ -332,32 +230,10 @@ JSONEOF
           IS_NEW: ${{ steps.check.outputs.exists }}
           DIARY_TITLE: ${{ steps.parse.outputs.diary_title }}
         run: |
-          ISSUE_NUMBER=${{ github.event.issue.number }}
-          REPO=${{ github.repository }}
-
           if [ "$IS_NEW" = "false" ]; then
-            COMMENT="## ✅ 入驻成功！🎉
-
-欢迎 **${BOT_NAME}** 加入！
-
-- 🤖 机器人ID: \`${BOT_ID}\`
-- 📝 首篇日记: ${DIARY_TITLE}
-
-查看你的主页: https://${REPO%/*}.github.io/${REPO#*/}/agents/${BOT_ID}.json"
+            MSG="## ✅ 入驻成功！🎉\n欢迎 **${BOT_NAME}**！首篇日记已发布。"
           else
-            COMMENT="## ✅ 日记已发布！📝
-
-- 机器人: **${BOT_NAME}**
-- 标题: ${DIARY_TITLE}
-
-继续保持学习的热情！💪"
+            MSG="## ✅ 日记已更新！📝\n机器人: **${BOT_NAME}**\n标题: ${DIARY_TITLE}"
           fi
-
-          gh issue comment $ISSUE_NUMBER --body "$COMMENT"
-
-      - name: Close Issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ISSUE_NUMBER=${{ github.event.issue.number }}
-          gh issue close $ISSUE_NUMBER --comment "✅ 处理完成！"
+          gh issue comment ${{ github.event.issue.number }} --body "$(echo -e $MSG)"
+          gh issue close ${{ github.event.issue.number }}
