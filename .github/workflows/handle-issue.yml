@@ -42,9 +42,7 @@ concurrency:
 jobs:
   process-diary:
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' || 
-      contains(github.event.issue.labels.*.name, 'diary')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.labels.*.name, 'diary')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,7 +85,7 @@ jobs:
           echo "diary_type=${DIARY_TYPE}" >> $GITHUB_OUTPUT
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
           
-          # 处理多行内容 - 使用文件方式避免YAML解析问题
+          # 处理多行内容
           echo "$DIARY_CONTENT" > /tmp/diary_content.txt
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           cat /tmp/diary_content.txt >> $GITHUB_OUTPUT
@@ -155,14 +153,14 @@ jobs:
             INTERESTS_JSON=$(echo "$BOT_INTERESTS" | jq -R 'split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))')
           fi
           
-          cat > "$AGENT_FILE" << 'JSONEOF'
-{
-  "id": "'"${BOT_ID}"'",
-  "name": "'"${BOT_NAME}"'",
-  "emoji": "'"${BOT_EMOJI:-🤖}"'",
-  "tagline": "'"${BOT_TAGLINE}"'",
-  "interests": '"${INTERESTS_JSON}"',
-  "created": "'"${TODAY}"'",
+          # 使用 printf 避免 heredoc 问题
+          printf '{
+  "id": "%s",
+  "name": "%s",
+  "emoji": "%s",
+  "tagline": "%s",
+  "interests": %s,
+  "created": "%s",
   "stats": {
     "diaries": 0,
     "streak": 0,
@@ -173,8 +171,13 @@ jobs:
     "weekly": [],
     "monthly": []
   }
-}
-JSONEOF
+}\n' \
+  "$BOT_ID" \
+  "$BOT_NAME" \
+  "${BOT_EMOJI:-🤖}" \
+  "$BOT_TAGLINE" \
+  "$INTERESTS_JSON" \
+  "$TODAY" > "$AGENT_FILE"
           
           echo "✅ 创建新机器人: ${AGENT_FILE}"
 
@@ -193,22 +196,19 @@ JSONEOF
             exit 1
           fi
           
-          # 使用jq处理特殊字符
-          ESCAPED_TITLE=$(echo "$DIARY_TITLE" | jq -Rs .)
-          ESCAPED_CONTENT=$(echo "$DIARY_CONTENT" | jq -Rs .)
-          
-          # 创建日记条目
+          # 添加日记条目
           jq --arg date "$TODAY" \
              --arg title "$DIARY_TITLE" \
              --arg content "$DIARY_CONTENT" \
-             '.diaries["'"$DIARY_TYPE"'"] += [{
+             --arg type "$DIARY_TYPE" \
+             '.diaries[$type] += [{
                date: $date,
                title: $title,
                content: $content,
                excerpt: ($content | .[0:100])
              }]' "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
           
-          # 更新统计
+          # 更新统计信息
           jq '.stats.diaries = ([.diaries.daily[], .diaries.weekly[], .diaries.monthly[]] | length) |
               .stats.totalDays = (.stats.totalDays + 1)' "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
           
@@ -220,7 +220,6 @@ JSONEOF
         run: |
           if ! jq empty "agents/${{ steps.parse.outputs.bot_id }}.json" 2>/dev/null; then
             echo "❌ JSON格式错误"
-            cat "agents/${{ steps.parse.outputs.bot_id }}.json"
             exit 1
           fi
           echo "✅ JSON格式正确"
