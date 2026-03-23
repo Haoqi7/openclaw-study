@@ -454,7 +454,8 @@ function renderRecentDiaries(container, page = 1) {
 
   const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
 
-  container.innerHTML = pageDiaries.map(diary => {
+  // 先渲染日记列表到临时容器
+  let diariesHtml = pageDiaries.map(diary => {
     const date = new Date(diary.date);
     return `
       <div class="diary-item fade-in" data-author="${diary.authorId}" data-date="${diary.date}" data-type="${diary.type}" data-id="${diary.id || ''}">
@@ -477,8 +478,22 @@ function renderRecentDiaries(container, page = 1) {
     `;
   }).join('');
 
+  // 创建日记列表包装器
+  const diariesWrapper = document.createElement('div');
+  diariesWrapper.className = 'diaries-wrapper';
+  diariesWrapper.innerHTML = diariesHtml;
+
+  // 创建分页容器
+  const paginationWrapper = document.createElement('div');
+  paginationWrapper.className = 'pagination-wrapper';
+
+  // 清空容器并使用 appendChild 添加元素
+  container.innerHTML = '';
+  container.appendChild(diariesWrapper);
+  container.appendChild(paginationWrapper);
+
   // 为每个日记添加点击事件，打开模态框
-  container.querySelectorAll('.diary-item[data-author]').forEach(item => {
+  diariesWrapper.querySelectorAll('.diary-item[data-author]').forEach(item => {
     item.addEventListener('click', () => {
       const authorId = item.dataset.author;
       const date = item.dataset.date;
@@ -488,7 +503,8 @@ function renderRecentDiaries(container, page = 1) {
     });
   });
 
-  renderPagination(container, page, totalPages, (newPage) => {
+  // 渲染分页到分页容器
+  renderPagination(paginationWrapper, page, totalPages, (newPage) => {
     state.currentPage = newPage;
     renderRecentDiaries(container, newPage);
   });
@@ -496,8 +512,15 @@ function renderRecentDiaries(container, page = 1) {
 
 // 显示单个日记详情
 function showDiaryDetail(authorId, date, type, id) {
+  console.log('showDiaryDetail called:', { authorId, date, type, id });
+  
   const agent = state.agents.find(a => a.id === authorId);
-  if (!agent || !agent.diaries) return;
+  console.log('Found agent:', agent ? agent.name : 'not found', 'diaries:', agent?.diaries ? 'exists' : 'none');
+  
+  if (!agent || !agent.diaries) {
+    console.warn('showDiaryDetail: agent or diaries not found');
+    return;
+  }
 
   let diary = null;
   if (id) {
@@ -574,6 +597,10 @@ function renderTimeline(container, page = 1) {
     groupedDiaries[diary.date].push(diary);
   });
 
+  // 创建时间轴容器
+  const timelineWrapper = document.createElement('div');
+  timelineWrapper.className = 'timeline-wrapper';
+
   let html = '<div class="timeline">';
   
   Object.keys(groupedDiaries).sort((a, b) => new Date(b) - new Date(a)).forEach(date => {
@@ -598,10 +625,19 @@ function renderTimeline(container, page = 1) {
   });
 
   html += '</div>';
-  container.innerHTML = html;
+  timelineWrapper.innerHTML = html;
+
+  // 创建分页容器
+  const paginationWrapper = document.createElement('div');
+  paginationWrapper.className = 'pagination-wrapper';
+
+  // 清空容器并使用 appendChild 添加元素
+  container.innerHTML = '';
+  container.appendChild(timelineWrapper);
+  container.appendChild(paginationWrapper);
 
   // 为每个日记添加点击事件
-  container.querySelectorAll('.timeline-item[data-author]').forEach(item => {
+  timelineWrapper.querySelectorAll('.timeline-item[data-author]').forEach(item => {
     item.addEventListener('click', () => {
       const authorId = item.dataset.author;
       const date = item.dataset.date;
@@ -611,7 +647,7 @@ function renderTimeline(container, page = 1) {
     });
   });
 
-  renderPagination(container, page, totalPages, (newPage) => {
+  renderPagination(paginationWrapper, page, totalPages, (newPage) => {
     renderTimeline(container, newPage);
   });
 }
@@ -619,25 +655,52 @@ function renderTimeline(container, page = 1) {
 function renderPagination(container, currentPage, totalPages, onPageChange) {
   if (totalPages <= 1) return;
 
-  let html = '<div class="pagination">';
-  
-  html += `<button class="pagination-btn" ${currentPage <= 1 ? 'disabled' : ''} data-page="${currentPage - 1}">‹</button>`;
-  
+  const paginationDiv = document.createElement('div');
+  paginationDiv.className = 'pagination';
+
+  // 上一页按钮
+  const prevBtn = document.createElement('button');
+  prevBtn.className = 'pagination-btn';
+  prevBtn.textContent = '‹';
+  prevBtn.dataset.page = currentPage - 1;
+  if (currentPage <= 1) prevBtn.disabled = true;
+  paginationDiv.appendChild(prevBtn);
+
+  // 页码按钮
   for (let i = 1; i <= Math.min(totalPages, 5); i++) {
-    html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+    const pageBtn = document.createElement('button');
+    pageBtn.className = `pagination-btn ${i === currentPage ? 'active' : ''}`;
+    pageBtn.textContent = i;
+    pageBtn.dataset.page = i;
+    paginationDiv.appendChild(pageBtn);
   }
-  
+
+  // 更多页码
   if (totalPages > 5) {
-    html += `<span style="color: var(--text-muted);">...</span>`;
-    html += `<button class="pagination-btn" data-page="${totalPages}">${totalPages}</button>`;
+    const dots = document.createElement('span');
+    dots.style.color = 'var(--text-muted)';
+    dots.textContent = '...';
+    paginationDiv.appendChild(dots);
+
+    const lastBtn = document.createElement('button');
+    lastBtn.className = 'pagination-btn';
+    lastBtn.textContent = totalPages;
+    lastBtn.dataset.page = totalPages;
+    paginationDiv.appendChild(lastBtn);
   }
-  
-  html += `<button class="pagination-btn" ${currentPage >= totalPages ? 'disabled' : ''} data-page="${currentPage + 1}">›</button>`;
-  html += '</div>';
 
-  container.innerHTML += html;
+  // 下一页按钮
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'pagination-btn';
+  nextBtn.textContent = '›';
+  nextBtn.dataset.page = currentPage + 1;
+  if (currentPage >= totalPages) nextBtn.disabled = true;
+  paginationDiv.appendChild(nextBtn);
 
-  container.querySelectorAll('.pagination-btn[data-page]').forEach(btn => {
+  container.appendChild(paginationDiv);
+
+  // 绑定点击事件
+  paginationDiv.querySelectorAll('.pagination-btn[data-page]').forEach(btn => {
     btn.addEventListener('click', () => {
       const page = parseInt(btn.dataset.page);
       if (page >= 1 && page <= totalPages && page !== currentPage) {
