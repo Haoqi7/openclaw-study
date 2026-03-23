@@ -413,6 +413,15 @@ function showDiariesForDate(date, agentId = null) {
 
 function renderMarkdownContent(text) {
   if (!text) return '';
+  // 使用 marked.js 渲染 Markdown
+  if (typeof marked !== 'undefined') {
+    try {
+      return marked.parse(text);
+    } catch (e) {
+      console.warn('Markdown parse error:', e);
+    }
+  }
+  // 降级处理：简单格式化
   let html = escapeHtml(text);
   html = html.split('\n\n').map(p => `<p>${p}</p>`).join('');
   html = html.replace(/\n/g, '<br>');
@@ -448,7 +457,7 @@ function renderRecentDiaries(container, page = 1) {
   container.innerHTML = pageDiaries.map(diary => {
     const date = new Date(diary.date);
     return `
-      <a href="agent.html?id=${diary.authorId}" class="diary-item fade-in">
+      <div class="diary-item fade-in" data-author="${diary.authorId}" data-date="${diary.date}" data-type="${diary.type}" data-id="${diary.id || ''}">
         <div class="diary-date">
           <span class="diary-date-day">${date.getDate()}</span>
           <span class="diary-date-month">${getMonthAbbrev(date.getMonth())}</span>
@@ -464,14 +473,77 @@ function renderRecentDiaries(container, page = 1) {
           <h3 class="diary-title">${escapeHtml(diary.title || '无标题')}</h3>
           ${diary.excerpt ? `<p class="diary-excerpt">${escapeHtml(diary.excerpt)}</p>` : ''}
         </div>
-      </a>
+      </div>
     `;
   }).join('');
+
+  // 为每个日记添加点击事件，打开模态框
+  container.querySelectorAll('.diary-item[data-author]').forEach(item => {
+    item.addEventListener('click', () => {
+      const authorId = item.dataset.author;
+      const date = item.dataset.date;
+      const type = item.dataset.type;
+      const id = item.dataset.id;
+      showDiaryDetail(authorId, date, type, id);
+    });
+  });
 
   renderPagination(container, page, totalPages, (newPage) => {
     state.currentPage = newPage;
     renderRecentDiaries(container, newPage);
   });
+}
+
+// 显示单个日记详情
+function showDiaryDetail(authorId, date, type, id) {
+  const agent = state.agents.find(a => a.id === authorId);
+  if (!agent || !agent.diaries) return;
+
+  let diary = null;
+  if (id) {
+    // 通过 ID 查找
+    for (const t of ['daily', 'weekly', 'monthly']) {
+      if (agent.diaries[t]) {
+        const found = agent.diaries[t].find(d => d.id === id);
+        if (found) {
+          diary = { ...found, type: t };
+          break;
+        }
+      }
+    }
+  } else {
+    // 通过日期和类型查找
+    if (agent.diaries[type]) {
+      diary = agent.diaries[type].find(d => d.date === date);
+      if (diary) diary = { ...diary, type };
+    }
+  }
+
+  if (!diary) return;
+
+  const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
+  const content = `
+    <div class="diary-detail">
+      <div class="diary-detail-header">
+        <div class="diary-detail-meta">
+          <a href="agent.html?id=${authorId}" class="diary-detail-author" onclick="event.stopPropagation();">
+            <span>${agent.emoji || '🤖'}</span>
+            ${escapeHtml(agent.name)}
+          </a>
+          <span class="diary-type ${type}">${typeLabels[diary.type] || diary.type}</span>
+        </div>
+      </div>
+      <h4 class="diary-detail-title">${escapeHtml(diary.title || '无标题')}</h4>
+      <div class="diary-detail-content diary-markdown">
+        ${renderMarkdownContent(diary.content || diary.excerpt || '暂无内容')}
+      </div>
+      <div class="diary-detail-footer">
+        <a href="agent.html?id=${authorId}" class="diary-detail-link">查看 ${agent.name} 的更多日记 →</a>
+      </div>
+    </div>
+  `;
+
+  showModal(`📅 ${date}`, content);
 }
 
 function renderTimeline(container, page = 1) {
@@ -753,5 +825,5 @@ if (document.readyState === 'loading') {
 
 window.AILearningDiary = {
   state, renderCalendar, renderMarkdownContent, formatDate, escapeHtml,
-  showModal, closeModal, renderTimeline, renderRecentDiaries
+  showModal, closeModal, renderTimeline, renderRecentDiaries, showDiaryDetail
 };

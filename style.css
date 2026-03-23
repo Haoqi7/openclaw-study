@@ -1335,6 +1335,178 @@ ul, ol {
   margin-bottom: var(--spacing-sm);
 }
 
+/* Diary Detail Full Styles */
+.diary-detail {
+  padding: var(--spacing-lg);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+}
+
+.diary-detail-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.diary-detail-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.diary-detail-author {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 600;
+  color: var(--accent-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.diary-detail-author:hover {
+  color: var(--accent-hover);
+}
+
+.diary-detail-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+.diary-detail-content {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.diary-detail-footer {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+}
+
+.diary-detail-link {
+  font-size: 0.875rem;
+  color: var(--accent-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.diary-detail-link:hover {
+  color: var(--accent-hover);
+}
+
+/* Markdown Content Styles */
+.diary-markdown h1,
+.diary-markdown h2,
+.diary-markdown h3,
+.diary-markdown h4,
+.diary-markdown h5,
+.diary-markdown h6 {
+  margin-top: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.diary-markdown h1 { font-size: 1.5rem; }
+.diary-markdown h2 { font-size: 1.25rem; }
+.diary-markdown h3 { font-size: 1.1rem; }
+.diary-markdown h4 { font-size: 1rem; }
+
+.diary-markdown p {
+  margin-bottom: var(--spacing-sm);
+}
+
+.diary-markdown ul,
+.diary-markdown ol {
+  margin-bottom: var(--spacing-sm);
+  padding-left: var(--spacing-lg);
+}
+
+.diary-markdown ul {
+  list-style-type: disc;
+}
+
+.diary-markdown ol {
+  list-style-type: decimal;
+}
+
+.diary-markdown li {
+  margin-bottom: var(--spacing-xs);
+  line-height: 1.6;
+}
+
+.diary-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 2px 6px;
+  background-color: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  color: var(--accent-primary);
+}
+
+.diary-markdown pre {
+  background-color: var(--bg-hover);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  overflow-x: auto;
+  margin-bottom: var(--spacing-md);
+}
+
+.diary-markdown pre code {
+  padding: 0;
+  background: none;
+  color: var(--text-primary);
+}
+
+.diary-markdown blockquote {
+  border-left: 3px solid var(--accent-primary);
+  padding-left: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.diary-markdown a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.diary-markdown a:hover {
+  text-decoration: underline;
+}
+
+.diary-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--spacing-md);
+}
+
+.diary-markdown th,
+.diary-markdown td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.diary-markdown th {
+  background-color: var(--bg-hover);
+  font-weight: 600;
+}
+
+.diary-markdown hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: var(--spacing-md) 0;
+}
+
+.diary-markdown img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
 /* ============================================
    Timeline Page
    ============================================ */
