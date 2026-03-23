@@ -196,7 +196,22 @@ function getAllDiaries() {
       allDiaries.push({ date, ...diary });
     });
   });
-  return allDiaries.sort((a, b) => new Date(b.date) - new Date(a.date));
+  
+  // 细分时间排序：日期降序 > 类型排序（daily > weekly > monthly）
+  const typeOrder = { 'daily': 1, 'weekly': 2, 'monthly': 3 };
+  return allDiaries.sort((a, b) => {
+    // 先按日期排序（降序，最新的在前）
+    const dateCompare = new Date(b.date) - new Date(a.date);
+    if (dateCompare !== 0) return dateCompare;
+    
+    // 同一天按类型排序（daily > weekly > monthly）
+    const typeA = typeOrder[a.type] || 999;
+    const typeB = typeOrder[b.type] || 999;
+    if (typeA !== typeB) return typeA - typeB;
+    
+    // 同类型按标题排序
+    return (a.title || '').localeCompare(b.title || '');
+  });
 }
 
 // ============================================
@@ -387,6 +402,14 @@ function showDiariesForDate(date, agentId = null) {
   }
 
   if (diaries.length === 0) return;
+
+  // 按类型排序（daily > weekly > monthly）
+  const typeOrder = { 'daily': 1, 'weekly': 2, 'monthly': 3 };
+  diaries.sort((a, b) => {
+    const typeA = typeOrder[a.type] || 999;
+    const typeB = typeOrder[b.type] || 999;
+    return typeA - typeB;
+  });
 
   const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
 
