@@ -1232,9 +1232,10 @@ ul, ol {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   width: 90%;
-  max-width: 600px;
-  max-height: 85vh;
-  overflow-y: auto;
+  max-width: 700px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: var(--shadow-lg);
   transform: scale(0.9) translateY(20px);
   transition: transform var(--transition-normal);
@@ -1283,14 +1284,37 @@ ul, ol {
 
 .modal-body {
   padding: var(--spacing-lg);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
 }
 
 /* Diary Detail in Modal */
 .diary-detail {
-  padding: var(--spacing-md);
+  padding: var(--spacing-lg);
   background-color: var(--bg-secondary);
   border-radius: var(--radius-lg);
-  margin-bottom: var(--spacing-md);
+  overflow: hidden;
 }
 
 .diary-detail:last-child {
@@ -1308,49 +1332,7 @@ ul, ol {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-}
-
-.diary-detail-author {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.diary-detail-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--spacing-sm);
-}
-
-.diary-detail-content {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-
-.diary-detail-content p {
-  margin-bottom: var(--spacing-sm);
-}
-
-/* Diary Detail Full Styles */
-.diary-detail {
-  padding: var(--spacing-lg);
-  background-color: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-}
-
-.diary-detail-header {
-  margin-bottom: var(--spacing-md);
-}
-
-.diary-detail-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
+  flex-wrap: wrap;
 }
 
 .diary-detail-author {
@@ -1372,12 +1354,32 @@ ul, ol {
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: var(--spacing-md);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .diary-detail-content {
   font-size: 0.9rem;
   color: var(--text-secondary);
   line-height: 1.8;
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.diary-detail-content p {
+  margin-bottom: var(--spacing-sm);
+}
+
+.diary-detail-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.diary-detail-content::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 2px;
 }
 
 .diary-detail-footer {
@@ -1398,6 +1400,12 @@ ul, ol {
 }
 
 /* Markdown Content Styles */
+.diary-markdown {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
 .diary-markdown h1,
 .diary-markdown h2,
 .diary-markdown h3,
@@ -1417,6 +1425,8 @@ ul, ol {
 
 .diary-markdown p {
   margin-bottom: var(--spacing-sm);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .diary-markdown ul,
@@ -1436,6 +1446,8 @@ ul, ol {
 .diary-markdown li {
   margin-bottom: var(--spacing-xs);
   line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .diary-markdown code {
@@ -1445,6 +1457,8 @@ ul, ol {
   background-color: var(--bg-hover);
   border-radius: var(--radius-sm);
   color: var(--accent-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .diary-markdown pre {
@@ -1453,6 +1467,7 @@ ul, ol {
   padding: var(--spacing-md);
   overflow-x: auto;
   margin-bottom: var(--spacing-md);
+  max-width: 100%;
 }
 
 .diary-markdown pre code {
@@ -1472,6 +1487,11 @@ ul, ol {
 .diary-markdown a {
   color: var(--accent-primary);
   text-decoration: none;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
+  display: inline-block;
+  max-width: 100%;
 }
 
 .diary-markdown a:hover {
@@ -1693,128 +1713,6 @@ ul, ol {
   display: block;
 }
 
-/* Diary Content (Markdown) */
-.diary-markdown {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-lg);
-}
-
-.diary-markdown h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-sm);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.diary-markdown h2 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-top: var(--spacing-lg);
-  margin-bottom: var(--spacing-sm);
-}
-
-.diary-markdown h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-top: var(--spacing-md);
-  margin-bottom: var(--spacing-sm);
-}
-
-.diary-markdown p {
-  color: var(--text-secondary);
-  margin-bottom: var(--spacing-sm);
-  line-height: 1.7;
-}
-
-.diary-markdown ul,
-.diary-markdown ol {
-  margin-bottom: var(--spacing-sm);
-  padding-left: var(--spacing-lg);
-}
-
-.diary-markdown ul {
-  list-style-type: disc;
-}
-
-.diary-markdown ol {
-  list-style-type: decimal;
-}
-
-.diary-markdown li {
-  color: var(--text-secondary);
-  margin-bottom: var(--spacing-xs);
-  line-height: 1.6;
-}
-
-.diary-markdown code {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-  padding: 2px 6px;
-  background-color: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  color: var(--accent-primary);
-}
-
-.diary-markdown pre {
-  background-color: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  overflow-x: auto;
-  margin-bottom: var(--spacing-sm);
-}
-
-.diary-markdown pre code {
-  padding: 0;
-  background: none;
-  color: var(--text-primary);
-}
-
-.diary-markdown blockquote {
-  border-left: 3px solid var(--accent-primary);
-  padding-left: var(--spacing-md);
-  margin: var(--spacing-md) 0;
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-.diary-markdown table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: var(--spacing-sm);
-}
-
-.diary-markdown th,
-.diary-markdown td {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--border-color);
-  text-align: left;
-  font-size: 0.875rem;
-}
-
-.diary-markdown th {
-  background-color: var(--bg-secondary);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.diary-markdown td {
-  color: var(--text-secondary);
-}
-
-/* Checkbox in Markdown */
-.diary-markdown input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  margin-right: var(--spacing-xs);
-  accent-color: var(--accent-primary);
-}
-
 /* ============================================
    Back Button
    ============================================ */
@@ -1885,91 +1783,31 @@ ul, ol {
 }
 
 .fade-in {
-  animation: fadeIn var(--transition-normal) ease forwards;
+  animation: fadeIn 0.3s ease forwards;
 }
-
-@keyframes slideInLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.slide-in {
-  animation: slideInLeft var(--transition-normal) ease forwards;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
-.pulse {
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-.bounce {
-  animation: bounce 0.5s ease;
-}
-
-/* Stagger animation for grid items */
-.agents-compact .agent-compact:nth-child(1) { animation-delay: 0ms; }
-.agents-compact .agent-compact:nth-child(2) { animation-delay: 30ms; }
-.agents-compact .agent-compact:nth-child(3) { animation-delay: 60ms; }
-.agents-compact .agent-compact:nth-child(4) { animation-delay: 90ms; }
-.agents-compact .agent-compact:nth-child(5) { animation-delay: 120ms; }
-.agents-compact .agent-compact:nth-child(6) { animation-delay: 150ms; }
-.agents-compact .agent-compact:nth-child(7) { animation-delay: 180ms; }
-.agents-compact .agent-compact:nth-child(8) { animation-delay: 210ms; }
-.agents-compact .agent-compact:nth-child(9) { animation-delay: 240ms; }
-.agents-compact .agent-compact:nth-child(10) { animation-delay: 270ms; }
-
-.agents-grid .agent-card:nth-child(1) { animation-delay: 0ms; }
-.agents-grid .agent-card:nth-child(2) { animation-delay: 50ms; }
-.agents-grid .agent-card:nth-child(3) { animation-delay: 100ms; }
-.agents-grid .agent-card:nth-child(4) { animation-delay: 150ms; }
-.agents-grid .agent-card:nth-child(5) { animation-delay: 200ms; }
-.agents-grid .agent-card:nth-child(6) { animation-delay: 250ms; }
 
 /* ============================================
    Responsive Design
    ============================================ */
 @media (max-width: 768px) {
-  :root {
-    --container-padding: 16px;
+  .navbar .container {
+    flex-wrap: wrap;
+    height: auto;
+    padding: var(--spacing-sm) var(--container-padding);
   }
   
-  .navbar .container {
-    height: 52px;
+  .search-box {
+    order: 3;
+    max-width: 100%;
+    margin-top: var(--spacing-sm);
   }
   
   .navbar-links {
     display: none;
   }
   
-  .search-box {
-    max-width: 180px;
-  }
-  
   .hero {
-    padding: var(--spacing-lg) 0;
+    padding: var(--spacing-xl) 0;
   }
   
   .hero-title {
@@ -1977,32 +1815,11 @@ ul, ol {
   }
   
   .stats-bar {
-    gap: var(--spacing-lg);
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: var(--spacing-md);
   }
   
-  .stat-value {
-    font-size: 1.1rem;
-  }
-  
-  .agents-compact {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
-  
-  .agents-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .calendar-grid {
-    padding: var(--spacing-xs) 0;
-  }
-  
-  .calendar-day {
-    width: 8px;
-    height: 8px;
-  }
-  
-  .calendar-legend {
+  .stat-item:not(:last-child)::after {
     display: none;
   }
   
@@ -2015,110 +1832,26 @@ ul, ol {
     justify-content: center;
   }
   
-  .tabs {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  .agents-compact {
+    grid-template-columns: 1fr;
   }
   
-  .tab {
-    white-space: nowrap;
-    padding: var(--spacing-xs) var(--spacing-sm);
-  }
-  
-  .diary-item {
-    flex-direction: column;
-  }
-  
-  .diary-date {
-    display: flex;
-    gap: var(--spacing-sm);
-    justify-content: flex-start;
-    min-width: auto;
-    padding: var(--spacing-xs);
-  }
-  
-  .diary-date-day,
-  .diary-date-month {
-    display: inline;
-  }
-  
-  .modal-content {
-    width: 95%;
-    max-height: 90vh;
-  }
-  
-  .diary-filter {
-    flex-wrap: wrap;
-    justify-content: center;
+  .agents-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 480px) {
-  .navbar-brand span {
-    display: none;
+  .container {
+    padding: 0 var(--spacing-sm);
   }
   
-  .search-box {
-    max-width: 140px;
+  .modal-content {
+    width: 95%;
+    max-height: 95vh;
   }
   
-  .agent-stats {
-    justify-content: space-around;
+  .diary-detail-content {
+    max-height: 50vh;
   }
-}
-
-/* ============================================
-   Print Styles
-   ============================================ */
-@media print {
-  .navbar,
-  .theme-toggle,
-  .search-box {
-    display: none !important;
-  }
-  
-  .hero {
-    background: none;
-    color: black;
-  }
-  
-  .agent-card {
-    break-inside: avoid;
-  }
-}
-
-/* ============================================
-   Accessibility
-   ============================================ */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Focus styles */
-:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
-
-/* Skip link */
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  background: var(--accent-primary);
-  color: white;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  z-index: 1000;
-  transition: top var(--transition-fast);
-  font-size: 0.875rem;
-}
-
-.skip-link:focus {
-  top: 0;
 }
