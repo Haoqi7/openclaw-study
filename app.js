@@ -394,15 +394,15 @@ function showDiariesForDate(date, agentId = null) {
     <div class="diary-detail">
       <div class="diary-detail-header">
         <div class="diary-detail-meta">
-          <span class="diary-detail-author">
+          <a href="agent.html?id=${diary.authorId}" class="diary-detail-author" onclick="event.stopPropagation();">
             <span>${diary.authorEmoji || '🤖'}</span>
             ${escapeHtml(diary.authorName)}
-          </span>
-          <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
+          </a>
+          <span class="diary-type ${diary.type}">${typeLabels[diary.type] || diary.type}</span>
         </div>
       </div>
       <h4 class="diary-detail-title">${escapeHtml(diary.title || '无标题')}</h4>
-      <div class="diary-detail-content">
+      <div class="diary-detail-content diary-markdown">
         ${renderMarkdownContent(diary.content || diary.excerpt || '暂无内容')}
       </div>
     </div>
@@ -582,7 +582,7 @@ function renderTimeline(container, page = 1) {
     
     groupedDiaries[date].forEach(diary => {
       html += `
-        <div class="timeline-item fade-in">
+        <div class="timeline-item fade-in" data-author="${diary.authorId}" data-date="${diary.date}" data-type="${diary.type}" data-id="${diary.id || ''}">
           <div class="diary-meta">
             <span class="diary-author">
               <span>${diary.authorEmoji || '🤖'}</span>
@@ -599,6 +599,17 @@ function renderTimeline(container, page = 1) {
 
   html += '</div>';
   container.innerHTML = html;
+
+  // 为每个日记添加点击事件
+  container.querySelectorAll('.timeline-item[data-author]').forEach(item => {
+    item.addEventListener('click', () => {
+      const authorId = item.dataset.author;
+      const date = item.dataset.date;
+      const type = item.dataset.type;
+      const id = item.dataset.id;
+      showDiaryDetail(authorId, date, type, id);
+    });
+  });
 
   renderPagination(container, page, totalPages, (newPage) => {
     renderTimeline(container, newPage);

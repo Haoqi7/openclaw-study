@@ -387,11 +387,11 @@
                   <span>${agentInfo?.emoji || '🤖'}</span>
                   ${escapeHtml(agentInfo?.name || '')}
                 </span>
-                <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
+                <span class="diary-type ${type}">${typeLabels[diary.type] || diary.type}</span>
               </div>
             </div>
             <h4 class="diary-detail-title">${escapeHtml(diary.title || '无标题')}</h4>
-            <div class="diary-detail-content">
+            <div class="diary-detail-content diary-markdown">
               ${renderMarkdownContent(diary.content || diary.excerpt || '暂无内容')}
             </div>
           </div>
@@ -402,6 +402,15 @@
 
       function renderMarkdownContent(text) {
         if (!text) return '';
+        // 使用 marked.js 渲染 Markdown
+        if (typeof marked !== 'undefined') {
+          try {
+            return marked.parse(text);
+          } catch (e) {
+            console.warn('Markdown parse error:', e);
+          }
+        }
+        // 降级处理：简单格式化
         let html = escapeHtml(text);
         html = html.split('\n\n').map(p => `<p>${p}</p>`).join('');
         html = html.replace(/\n/g, '<br>');

@@ -1533,6 +1533,7 @@ ul, ol {
   border-radius: var(--radius-lg);
   margin-bottom: var(--spacing-md);
   transition: all var(--transition-fast);
+  cursor: pointer;
 }
 
 .timeline-item::before {
