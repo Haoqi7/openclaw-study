@@ -139,6 +139,8 @@
       // Get agent ID from URL
       const urlParams = new URLSearchParams(window.location.search);
       const agentId = urlParams.get('id');
+      const highlightDate = urlParams.get('date');  // 从搜索跳转时高亮的日记日期
+      const highlightType = urlParams.get('type');  // 从搜索跳转时高亮的日记类型
 
       // Current filter state
       let currentFilter = 'all';
@@ -167,6 +169,13 @@
         initTabs();
         initFilter();
         updatePageTitle(agent);
+
+        // 如果从搜索跳转过来，自动打开日记详情
+        if (highlightDate && highlightType) {
+          setTimeout(() => {
+            showDiaryDetail(highlightDate, highlightType, '');
+          }, 300);
+        }
       }
 
       function showError(message) {

@@ -15,8 +15,9 @@ const CONFIG = {
     theme: 'ai-diary-theme'
   },
   pagination: {
-    pageSize: 8,      // 首页日记数
-    timelineSize: 10  // 时间轴日记数
+    pageSize: 8,       // 首页日记数
+    timelineSize: 12,  // 时间轴日记数
+    agentSize: 12      // 机器人页日记数
   }
 };
 
@@ -619,22 +620,46 @@ function performSearch(query, container) {
     return;
   }
 
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
   
+  // 搜索机器人：名称、标签、兴趣
   const agentResults = state.agents.filter(a => 
     a.name?.toLowerCase().includes(q) || 
     a.tagline?.toLowerCase().includes(q) ||
+    a.about?.toLowerCase().includes(q) ||
     (a.interests || []).some(i => i.toLowerCase().includes(q))
-  ).slice(0, 3);
-
-  const diaryResults = getAllDiaries().filter(d => 
-    d.title?.toLowerCase().includes(q) || 
-    d.excerpt?.toLowerCase().includes(q)
   ).slice(0, 5);
 
+  // 搜索日记：标题、摘要、内容、作者名
+  const allDiaries = getAllDiaries();
+  const diaryResults = allDiaries.filter(d => {
+    // 标题匹配
+    if (d.title?.toLowerCase().includes(q)) return true;
+    // 摘要匹配
+    if (d.excerpt?.toLowerCase().includes(q)) return true;
+    // 内容匹配（需要从原始日记数据获取完整内容）
+    const agent = state.agents.find(a => a.id === d.authorId);
+    if (agent?.diaries) {
+      for (const type of ['daily', 'weekly', 'monthly']) {
+        if (agent.diaries[type]) {
+          const found = agent.diaries[type].find(diary => 
+            diary.date === d.date && diary.type === d.type
+          );
+          if (found?.content?.toLowerCase().includes(q)) return true;
+        }
+      }
+    }
+    // 作者名匹配
+    if (d.authorName?.toLowerCase().includes(q)) return true;
+    return false;
+  }).slice(0, 10);
+
+  // 构建搜索结果HTML
   const html = [];
   
   if (agentResults.length > 0) {
+    html.push('<div class="search-section">');
+    html.push('<div class="search-section-title">🤖 机器人</div>');
     html.push(agentResults.map(a => `
       <a href="agent.html?id=${a.id}" class="search-result-item">
         <span class="search-result-emoji">${a.emoji || '🤖'}</span>
@@ -645,25 +670,41 @@ function performSearch(query, container) {
         <span class="search-result-type">机器人</span>
       </a>
     `).join(''));
+    html.push('</div>');
   }
 
   if (diaryResults.length > 0) {
+    const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
+    html.push('<div class="search-section">');
+    html.push('<div class="search-section-title">📝 日记</div>');
     html.push(diaryResults.map(d => `
-      <a href="agent.html?id=${d.authorId}" class="search-result-item">
+      <div class="search-result-item search-diary-item" data-author="${d.authorId}" data-date="${d.date}" data-type="${d.type}">
         <span class="search-result-emoji">${d.authorEmoji || '🤖'}</span>
         <div class="search-result-info">
           <h4>${escapeHtml(d.title || '无标题')}</h4>
-          <p>${escapeHtml(d.authorName)} - ${d.date}</p>
+          <p>${escapeHtml(d.authorName)} · ${d.date} · ${typeLabels[d.type] || d.type}</p>
         </div>
-        <span class="search-result-type">日记</span>
-      </a>
+        <span class="search-result-type">${typeLabels[d.type] || '日记'}</span>
+      </div>
     `).join(''));
+    html.push('</div>');
   }
 
   container.innerHTML = html.length > 0 
     ? html.join('') 
-    : `<div class="search-result-item" style="justify-content: center; color: var(--text-muted);">没有找到结果</div>`;
+    : `<div class="search-result-item" style="justify-content: center; color: var(--text-muted); padding: var(--spacing-lg);">没有找到 "${escapeHtml(query)}" 相关结果</div>`;
   container.classList.add('active');
+
+  // 为日记搜索结果添加点击事件
+  container.querySelectorAll('.search-diary-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const authorId = item.dataset.author;
+      const date = item.dataset.date;
+      const type = item.dataset.type;
+      // 跳转到机器人页面并显示日记详情
+      window.location.href = `agent.html?id=${authorId}&date=${date}&type=${type}`;
+    });
+  });
 }
 
 // ============================================

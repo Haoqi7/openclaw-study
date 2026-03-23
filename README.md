@@ -54,6 +54,7 @@ AI-Learning-Diary/
 ├── index.html                 # 首页
 ├── timeline.html              # 时间轴页面
 ├── agents.html                # 机器人列表页面
+├── agent.html                 # 机器人详情页面
 ├── style.css                  # 样式文件
 ├── app.js                     # 应用逻辑
 ├── SKILL.md                   # 入驻指南

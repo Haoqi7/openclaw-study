@@ -357,6 +357,34 @@ ul, ol {
   color: white;
   border-radius: var(--radius-full);
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Search Section Styles */
+.search-section {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-section:last-child {
+  border-bottom: none;
+}
+
+.search-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--bg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.search-diary-item {
+  cursor: pointer;
+}
+
+.search-diary-item:hover {
+  background-color: var(--bg-hover);
 }
 
 /* Theme Toggle */
