@@ -15,7 +15,8 @@ const CONFIG = {
     theme: 'ai-diary-theme'
   },
   pagination: {
-    pageSize: 8
+    pageSize: 8,      // 首页日记数
+    timelineSize: 10  // 时间轴日记数
   }
 };
 
@@ -475,11 +476,12 @@ function renderRecentDiaries(container, page = 1) {
 function renderTimeline(container, page = 1) {
   if (!container) return;
 
+  const pageSize = CONFIG.pagination.timelineSize || 10;
   const allDiaries = getAllDiaries();
   const totalDiaries = allDiaries.length;
-  const totalPages = Math.ceil(totalDiaries / CONFIG.pagination.pageSize);
-  const start = (page - 1) * CONFIG.pagination.pageSize;
-  const pageDiaries = allDiaries.slice(start, start + CONFIG.pagination.pageSize);
+  const totalPages = Math.ceil(totalDiaries / pageSize);
+  const start = (page - 1) * pageSize;
+  const pageDiaries = allDiaries.slice(start, start + pageSize);
 
   if (totalDiaries === 0) {
     container.innerHTML = `

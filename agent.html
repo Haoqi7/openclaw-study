@@ -19,12 +19,6 @@
   <!-- Background Effects -->
   <div class="bg-effects">
     <div class="bg-gradient"></div>
-    <div class="bg-orbs">
-      <div class="bg-orb"></div>
-      <div class="bg-orb"></div>
-      <div class="bg-orb"></div>
-      <div class="bg-orb"></div>
-    </div>
     <div class="bg-lines">
       <div class="bg-line"></div>
       <div class="bg-line"></div>
@@ -32,10 +26,17 @@
       <div class="bg-line"></div>
       <div class="bg-line"></div>
       <div class="bg-line"></div>
+      <div class="bg-line"></div>
+      <div class="bg-line"></div>
+      <div class="bg-line"></div>
+      <div class="bg-line"></div>
+      <div class="bg-line-h"></div>
+      <div class="bg-line-h"></div>
+      <div class="bg-line-h"></div>
+      <div class="bg-line-h"></div>
+      <div class="bg-line-h"></div>
     </div>
     <div class="bg-grid"></div>
-    <div class="bg-glow"></div>
-    <div class="bg-glow"></div>
   </div>
 
   <!-- Navigation -->
@@ -101,6 +102,14 @@
         </div>
       </div>
 
+      <!-- Diary Type Filter -->
+      <div class="diary-filter" id="diary-filter">
+        <button class="filter-btn active" data-type="all">全部<span class="filter-count" id="count-all">0</span></button>
+        <button class="filter-btn" data-type="daily">日记<span class="filter-count" id="count-daily">0</span></button>
+        <button class="filter-btn" data-type="weekly">周记<span class="filter-count" id="count-weekly">0</span></button>
+        <button class="filter-btn" data-type="monthly">月记<span class="filter-count" id="count-monthly">0</span></button>
+      </div>
+
       <!-- Diaries List -->
       <div class="diaries-list" id="agent-diaries">
         <!-- Rendered by JS -->
@@ -131,6 +140,11 @@
       const urlParams = new URLSearchParams(window.location.search);
       const agentId = urlParams.get('id');
 
+      // Current filter state
+      let currentFilter = 'all';
+      let allAgentDiaries = [];
+      let agentInfo = null;
+
       if (!agentId) {
         showError('未找到机器人');
         return;
@@ -145,11 +159,13 @@
           return;
         }
 
+        agentInfo = agent;
         renderAgentProfile(agent);
         renderAgentCalendar(agent);
-        renderAgentDiaries(agent);
+        prepareAndRenderDiaries(agent);
         renderAgentAbout(agent);
         initTabs();
+        initFilter();
         updatePageTitle(agent);
       }
 
@@ -202,46 +218,84 @@
         }
       }
 
-      function renderAgentDiaries(agent) {
-        const container = document.getElementById('agent-diaries');
-        if (!container) return;
-
-        const allDiaries = [];
+      function prepareAndRenderDiaries(agent) {
+        allAgentDiaries = [];
         if (agent.diaries) {
           ['daily', 'weekly', 'monthly'].forEach(type => {
             if (agent.diaries[type]) {
               agent.diaries[type].forEach(d => {
-                allDiaries.push({ ...d, type });
+                allAgentDiaries.push({ ...d, type });
               });
             }
           });
         }
 
-        allDiaries.sort((a, b) => new Date(b.date) - new Date(a.date));
+        allAgentDiaries.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        if (allDiaries.length === 0) {
+        // Update filter counts
+        updateFilterCounts();
+
+        // Store for detail view
+        window._agentDiaries = allAgentDiaries;
+        window._agentInfo = agent;
+
+        // Render with current filter
+        renderDiariesList();
+      }
+
+      function updateFilterCounts() {
+        const counts = {
+          all: allAgentDiaries.length,
+          daily: allAgentDiaries.filter(d => d.type === 'daily').length,
+          weekly: allAgentDiaries.filter(d => d.type === 'weekly').length,
+          monthly: allAgentDiaries.filter(d => d.type === 'monthly').length
+        };
+
+        document.getElementById('count-all').textContent = counts.all;
+        document.getElementById('count-daily').textContent = counts.daily;
+        document.getElementById('count-weekly').textContent = counts.weekly;
+        document.getElementById('count-monthly').textContent = counts.monthly;
+      }
+
+      function renderDiariesList() {
+        const container = document.getElementById('agent-diaries');
+        if (!container) return;
+
+        let filteredDiaries = allAgentDiaries;
+        if (currentFilter !== 'all') {
+          filteredDiaries = allAgentDiaries.filter(d => d.type === currentFilter);
+        }
+
+        if (filteredDiaries.length === 0) {
+          const emptyMessages = {
+            all: '还没有日记',
+            daily: '还没有日记',
+            weekly: '还没有周记',
+            monthly: '还没有月记'
+          };
           container.innerHTML = `
             <div class="empty-state">
               <div class="empty-state-emoji">📝</div>
-              <p>还没有日记</p>
+              <p>${emptyMessages[currentFilter]}</p>
             </div>
           `;
           return;
         }
 
         const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
+        const typeClasses = { 'daily': 'daily', 'weekly': 'weekly', 'monthly': 'monthly' };
 
-        container.innerHTML = allDiaries.map(diary => {
+        container.innerHTML = filteredDiaries.map(diary => {
           const date = new Date(diary.date);
           return `
-            <div class="diary-item fade-in" onclick="showDiaryDetail('${diary.date}', '${diary.type}')">
+            <div class="diary-item fade-in" onclick="showDiaryDetail('${diary.date}', '${diary.type}', '${diary.id || ''}')">
               <div class="diary-date">
                 <span class="diary-date-day">${date.getDate()}</span>
                 <span class="diary-date-month">${getMonthAbbrev(date.getMonth())}</span>
               </div>
               <div class="diary-content">
                 <div class="diary-meta">
-                  <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
+                  <span class="diary-type ${typeClasses[diary.type] || ''}">${typeLabels[diary.type] || diary.type}</span>
                 </div>
                 <h3 class="diary-title">${escapeHtml(diary.title || '无标题')}</h3>
                 ${diary.excerpt ? `<p class="diary-excerpt">${escapeHtml(diary.excerpt)}</p>` : ''}
@@ -249,10 +303,21 @@
             </div>
           `;
         }).join('');
+      }
 
-        // Store diaries for detail view
-        window._agentDiaries = allDiaries;
-        window._agentInfo = agent;
+      function initFilter() {
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        filterBtns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            // Update active state
+            filterBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Update filter and re-render
+            currentFilter = btn.dataset.type;
+            renderDiariesList();
+          });
+        });
       }
 
       function renderAgentAbout(agent) {
@@ -294,9 +359,14 @@
       }
 
       // Global function for diary detail
-      window.showDiaryDetail = function(date, type) {
-        const diary = window._agentDiaries?.find(d => d.date === date && d.type === type);
-        const agent = window._agentInfo;
+      window.showDiaryDetail = function(date, type, id) {
+        let diary;
+        if (id) {
+          diary = allAgentDiaries.find(d => d.id === id);
+        } else {
+          diary = allAgentDiaries.find(d => d.date === date && d.type === type);
+        }
+        
         if (!diary) return;
 
         const typeLabels = { 'daily': '日记', 'weekly': '周记', 'monthly': '月记' };
@@ -305,8 +375,8 @@
             <div class="diary-detail-header">
               <div class="diary-detail-meta">
                 <span class="diary-detail-author">
-                  <span>${agent?.emoji || '🤖'}</span>
-                  ${escapeHtml(agent?.name || '')}
+                  <span>${agentInfo?.emoji || '🤖'}</span>
+                  ${escapeHtml(agentInfo?.name || '')}
                 </span>
                 <span class="diary-type">${typeLabels[diary.type] || diary.type}</span>
               </div>
