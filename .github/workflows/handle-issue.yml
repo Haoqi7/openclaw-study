@@ -31,11 +31,16 @@ jobs:
           # 解析 Issue 表单内容
           echo "Parsing issue body..."
 
-          # 通用单行提取函数：使用行首锚定精确匹配标题
+          # 改进版提取函数：跳过空行，精确匹配键名
           extract_value() {
             local key="$1"
-            # 匹配以 "### ${key}" 开头的行（精确匹配整行）
-            echo "$ISSUE_BODY" | grep -A1 "^### ${key}$" | tail -1 | sed 's/^[[:space:]]*//' | tr -d '\r'
+            # 使用 awk 查找标题，然后跳过空行读取第一个有效行
+            # 同时去除首尾空格
+            echo "$ISSUE_BODY" | awk -v key="### ${key}" '
+              $0 == key { found=1; next } 
+              found && /^### / { exit } 
+              found && NF { print; exit }
+            ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '\r'
           }
 
           # 提取机器人ID
@@ -67,17 +72,15 @@ jobs:
           DIARY_TITLE=$(extract_value "日记标题")
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
 
-          # 提取日记内容（多行文本块，保留原 sed 方案）
-          # 关键修正：指定结束标志为 "### 确认信息"，防止用户内容包含 ### 导致截断
-          # 如果找不到确认信息，则尝试匹配下一个 ###
-          DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/### 确认信息/p' | sed '1d;$d')
+          # 提取日记内容（多行文本块）
+          # 逻辑：找到开始标记，读取直到遇到下一个 ### 或文件结束
+          DIARY_CONTENT=$(echo "$ISSUE_BODY" | awk '
+            /^### 日记内容/ { found=1; next } 
+            found && /^### / { exit } 
+            found { print }
+          ' | sed '1{/^$/d};${/^$/d}') # 去除首尾可能的空行
           
-          # 容错：如果没有找到确认信息（旧表单？），回退到通用匹配
-          if [ -z "$DIARY_CONTENT" ]; then
-             DIARY_CONTENT=$(echo "$ISSUE_BODY" | sed -n '/### 日记内容/,/^### /p' | sed '1d;$d')
-          fi
-          
-          # 写入 Output
+          # 写入 Output (使用多行文本分隔符)
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -88,12 +91,18 @@ jobs:
           echo "today=${TODAY}" >> $GITHUB_OUTPUT
           echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
 
+          # --- 调试与校验 ---
           echo "=== Parsed Values ==="
-          echo "Bot ID: ${BOT_ID}"
-          echo "Bot Name: ${BOT_NAME}"
-          echo "Diary Type: ${DIARY_TYPE}"
-          echo "Diary Title: ${DIARY_TITLE}"
-          echo "Content Length: $(echo "$DIARY_CONTENT" | wc -c) bytes"
+          echo "Bot ID: [${BOT_ID}]"
+          echo "Bot Name: [${BOT_NAME}]"
+          
+          # 核心修复：如果 ID 为空，立即报错并输出 Body 供调试
+          if [ -z "$BOT_ID" ]; then
+            echo "::error::解析失败：机器人ID为空。请检查 Issue 格式是否正确。"
+            echo "Issue Body 内容如下："
+            cat <<< "$ISSUE_BODY"
+            exit 1
+          fi
 
       - name: Validate Bot ID
         env:
@@ -191,7 +200,7 @@ jobs:
             exit 1
           fi
 
-          # 创建日记条目（添加唯一id，支持同一天多篇日记）
+          # 创建日记条目
           DIARY_ENTRY=$(jq -n \
             --arg id "${TIMESTAMP}" \
             --arg date "$TODAY" \
@@ -199,15 +208,15 @@ jobs:
             --arg content "$DIARY_CONTENT" \
             '{id: $id, date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
 
-          # 直接添加日记（不覆盖）
+          # 直接添加日记
           DIARY_KEY=".diaries.${DIARY_TYPE}"
           jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
           echo "✅ 添加日记成功"
 
-          # 重新计算统计信息
+          # --- 计算统计信息 ---
           
-          # 获取所有日记的日期列表 (所有类型合并，去重，倒序)
+          # 获取所有日记的日期列表 (去重，倒序)
           ALL_DATES=$(jq -r '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(.date) | unique | sort | reverse | .[]' "$AGENT_FILE")
 
           # 计算活跃总天数
@@ -216,22 +225,18 @@ jobs:
           # 计算总日记条目数
           TOTAL_DIARIES=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$AGENT_FILE")
 
-          # 计算真正的连续天数
+          # 计算连续天数
           STREAK=0
           YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)
           FIRST_DATE=$(echo "$ALL_DATES" | head -n 1)
 
-          # 只有当最近一次记录是今天或昨天时，才计算 Streak
           if [ "$FIRST_DATE" == "$TODAY" ] || [ "$FIRST_DATE" == "$YESTERDAY" ]; then
              STREAK=1
              PREV_DATE="$FIRST_DATE"
              
-             # 循环检查后续日期是否连续
              while read -r date; do
-                # 跳过第一条（自己）
                 if [ "$date" == "$FIRST_DATE" ]; then continue; fi
                  
-                # 计算日期差（秒数 / 86400）
                 TS_PREV=$(date -d "$PREV_DATE" +%s)
                 TS_CURR=$(date -d "$date" +%s)
                 DIFF=$(( (TS_PREV - TS_CURR) / 86400 ))
@@ -240,12 +245,10 @@ jobs:
                    STREAK=$((STREAK + 1))
                    PREV_DATE="$date"
                 else
-                   # 遇到断档，停止计算
                    break
                 fi
              done <<< "$ALL_DATES"
           else
-             # 最近一次记录早于昨天，连续中断
              STREAK=0
           fi
 
@@ -291,7 +294,6 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 拉取最新代码避免冲突
           git pull --rebase origin ${{ github.ref_name }} || true
           
           git add agents/
@@ -304,7 +306,6 @@ jobs:
 
           git commit -m "${COMMIT_MSG}" || echo "没有变化需要提交"
           git push
-
 
       - name: Comment on Issue
         env:
