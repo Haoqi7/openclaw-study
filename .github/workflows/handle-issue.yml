@@ -28,19 +28,42 @@ jobs:
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # 解析 Issue 表单内容
+          set -e # 确保脚本出错时退出
           echo "Parsing issue body..."
 
-          # 改进版提取函数：跳过空行，精确匹配键名
+          # --- 核心修复：通用提取函数 ---
+          # 1. tr -d '\r' : 移除所有回车符，解决 CRLF 导致的匹配失败
+          # 2. awk 匹配逻辑：去除首尾空格后匹配标题，跳过空行，读取有效内容
           extract_value() {
             local key="$1"
-            # 使用 awk 查找标题，然后跳过空行读取第一个有效行
-            # 同时去除首尾空格
-            echo "$ISSUE_BODY" | awk -v key="### ${key}" '
-              $0 == key { found=1; next } 
-              found && /^### / { exit } 
-              found && NF { print; exit }
-            ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '\r'
+            echo "$ISSUE_BODY" | tr -d '\r' | awk -v key="### ${key}" '
+              # 定义清理函数：去首尾空格
+              function clean(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+              
+              # 处理每一行
+              {
+                # 清理当前行用于判断
+                line = clean($0)
+                
+                # 状态机逻辑
+                if (line == key) {
+                  found = 1  # 找到标题
+                  next
+                }
+                
+                if (found) {
+                  # 如果遇到下一个 ### 标题，停止
+                  if (line ~ /^### /) exit
+                
+                  # 如果当前行非空，这是我们要的内容
+                  if (line != "") {
+                    print $0  # 打印原始行（保留内部格式）
+                    exit
+                  }
+                  # 如果是空行，继续跳过
+                }
+              }
+            '
           }
 
           # 提取机器人ID
@@ -73,14 +96,23 @@ jobs:
           echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
 
           # 提取日记内容（多行文本块）
-          # 逻辑：找到开始标记，读取直到遇到下一个 ### 或文件结束
-          DIARY_CONTENT=$(echo "$ISSUE_BODY" | awk '
-            /^### 日记内容/ { found=1; next } 
-            found && /^### / { exit } 
+          # 修正：同样先移除 \r，然后匹配开始和结束标记
+          DIARY_CONTENT=$(echo "$ISSUE_BODY" | tr -d '\r' | awk '
+            function clean(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+            
+            BEGIN { found=0 }
+            
+            # 检测开始标记
+            clean($0) == "### 日记内容" { found=1; next }
+            
+            # 检测结束标记（下一个标题）
+            found && clean($0) ~ /^### / { exit }
+            
+            # 打印内容部分
             found { print }
-          ' | sed '1{/^$/d};${/^$/d}') # 去除首尾可能的空行
+          ' | sed '1{/^$/d};${/^$/d}') # 移除首尾空行
           
-          # 写入 Output (使用多行文本分隔符)
+          # 写入 Output
           echo "diary_content<<EOF" >> $GITHUB_OUTPUT
           echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -91,16 +123,19 @@ jobs:
           echo "today=${TODAY}" >> $GITHUB_OUTPUT
           echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
 
-          # --- 调试与校验 ---
+          # --- 调试信息 ---
           echo "=== Parsed Values ==="
           echo "Bot ID: [${BOT_ID}]"
           echo "Bot Name: [${BOT_NAME}]"
+          echo "Diary Type: [${DIARY_TYPE}]"
+          echo "Diary Title: [${DIARY_TITLE}]"
           
-          # 核心修复：如果 ID 为空，立即报错并输出 Body 供调试
+          # 核心验证：如果 ID 为空，打印原始 Body 并报错
           if [ -z "$BOT_ID" ]; then
-            echo "::error::解析失败：机器人ID为空。请检查 Issue 格式是否正确。"
-            echo "Issue Body 内容如下："
-            cat <<< "$ISSUE_BODY"
+            echo "::error::解析失败：机器人ID为空。请检查是否存在换行符问题或格式不匹配。"
+            echo ">>> Raw Issue Body Start <<<"
+            echo "$ISSUE_BODY"
+            echo ">>> Raw Issue Body End <<<"
             exit 1
           fi
 
