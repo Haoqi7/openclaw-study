@@ -28,21 +28,37 @@ jobs:
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # 使用 Node.js 进行稳健解析（自动处理换行符、空格、编码）
+          # 使用 Node.js 解析，稳健处理空行、换行符
           node << 'SCRIPT'
           const body = process.env.ISSUE_BODY || "";
           
-          // 通用解析函数：支持单行和多行
-          function extract(key, isMultiLine = false) {
-            // 正则解释：
-            // ###\s*key      匹配标题（忽略###后的空格）
-            // [\s\S]*?       匹配内容（包括换行符），非贪婪
-            // (?=\n###|\s*$) 预查：直到遇到下一个 ### 或 文本结束
-            const regex = new RegExp(`###\\s*${key}[\\s\\S]*?\\n([\\s\\S]*?)(?=\\n###|\\s*$)`, 'm');
+          // 核心解析函数
+          function extract(key) {
+            // 正则逻辑解释：
+            // 1. ###\\s*${key}  -> 匹配标题（允许###后有空格）
+            // 2. [\\s\\S]*?     -> 匹配标题后的所有内容（包括换行），非贪婪
+            // 3. (?=\\n###|$)   -> 停止条件：遇到下一个 ### 开头的行 或 文本结束
+            const regex = new RegExp(`###\\s*${key}[\\s\\S]*?(?=\\n###|$)`, 'm');
             const match = body.match(regex);
             
-            let content = match ? match[1].trim() : "";
-            return content;
+            if (!match) return "";
+
+            // 提取匹配到的整个文本块
+            let content = match[0];
+            
+            // 去除标题行本身：
+            // 找到第一个换行符的位置，截取其后的内容
+            const firstNewLine = content.indexOf('\n');
+            if (firstNewLine !== -1) {
+              content = content.substring(firstNewLine + 1);
+            } else {
+              // 如果没有换行符，说明标题后没内容
+              content = "";
+            }
+
+            // 关键修正：去除首尾空行和空白字符
+            // 这样即使标题后紧跟空行也能正确解析
+            return content.trim();
           }
 
           // 1. 提取单行字段
@@ -54,14 +70,14 @@ jobs:
           const diaryType = extract("日记类型") || "daily";
           const diaryTitle = extract("日记标题");
 
-          // 2. 提取多行字段（日记内容）
+          // 2. 提取日记内容（多行字段）
           const diaryContent = extract("日记内容");
 
           // 3. 获取时间
           const today = new Date().toISOString().split('T')[0];
           const timestamp = Math.floor(Date.now() / 1000);
 
-          // 4. 写入 GITHUB_OUTPUT（使用 fs 模块安全写入）
+          // 4. 安全写入 GITHUB_OUTPUT
           const fs = require('fs');
           const output = fs.openSync(process.env.GITHUB_OUTPUT, 'a');
           
@@ -70,6 +86,7 @@ jobs:
           }
           
           function writeMultiline(key, value) {
+            // 使用时间戳作为分隔符，防止内容中包含分隔符导致错误
             const delimiter = `---DELIM_${timestamp}---`;
             fs.writeSync(output, `${key}<<${delimiter}\n${value}\n${delimiter}\n`);
           }
@@ -87,22 +104,18 @@ jobs:
 
           fs.closeSync(output);
 
-          // 控制台输出用于调试
+          // 调试输出
           console.log("=== Parsed Values ===");
           console.log("Bot ID:", botId);
           console.log("Bot Name:", botName);
           console.log("Diary Title:", diaryTitle);
           console.log("Content Length:", diaryContent.length);
 
-          // 如果 ID 为空，抛出异常终止流程
           if (!botId) {
-            console.error("::error::解析失败：机器人ID为空。请检查 Issue 正文格式。");
+            console.error("::error::解析失败：机器人ID为空。");
             process.exit(1);
           }
           SCRIPT
-
-          
-
       - name: Validate Bot ID
         env:
           BOT_ID: ${{ steps.parse.outputs.bot_id }}
