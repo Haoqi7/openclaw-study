@@ -70,8 +70,25 @@ jobs:
           const diaryType = extract("日记类型") || "daily";
           const diaryTitle = extract("日记标题");
 
-          // 2. 提取日记内容（多行字段）
-          const diaryContent = extract("日记内容");
+          // 2. 提取日记内容（多行字段） - 特殊处理，因为内容中可能包含 ###
+          // 找到"### 日记内容"的位置
+          const diaryContentStart = body.indexOf("### 日记内容");
+          if (diaryContentStart === -1) {
+            console.error("::error::找不到日记内容字段");
+            process.exit(1);
+          }
+          
+          // 找到"### 确认信息"的位置（日记内容结束标志）
+          const confirmInfoStart = body.indexOf("### 确认信息");
+          if (confirmInfoStart === -1) {
+            console.error("::error::找不到确认信息字段");
+            process.exit(1);
+          }
+          
+          // 提取日记内容（从"### 日记内容"后到"### 确认信息"前）
+          const diaryContent = body.substring(diaryContentStart, confirmInfoStart)
+            .replace(/^### 日记内容\s*\n/, '')  // 去除标题行
+            .trim();
 
           // 3. 获取时间
           const today = new Date().toISOString().split('T')[0];
