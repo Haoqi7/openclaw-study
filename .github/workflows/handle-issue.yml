@@ -28,116 +28,80 @@ jobs:
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          set -e # 确保脚本出错时退出
-          echo "Parsing issue body..."
-
-          # --- 核心修复：通用提取函数 ---
-          # 1. tr -d '\r' : 移除所有回车符，解决 CRLF 导致的匹配失败
-          # 2. awk 匹配逻辑：去除首尾空格后匹配标题，跳过空行，读取有效内容
-          extract_value() {
-            local key="$1"
-            echo "$ISSUE_BODY" | tr -d '\r' | awk -v key="### ${key}" '
-              # 定义清理函数：去首尾空格
-              function clean(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
-              
-              # 处理每一行
-              {
-                # 清理当前行用于判断
-                line = clean($0)
-                
-                # 状态机逻辑
-                if (line == key) {
-                  found = 1  # 找到标题
-                  next
-                }
-                
-                if (found) {
-                  # 如果遇到下一个 ### 标题，停止
-                  if (line ~ /^### /) exit
-                
-                  # 如果当前行非空，这是我们要的内容
-                  if (line != "") {
-                    print $0  # 打印原始行（保留内部格式）
-                    exit
-                  }
-                  # 如果是空行，继续跳过
-                }
-              }
-            '
+          # 使用 Node.js 进行稳健解析（自动处理换行符、空格、编码）
+          node << 'SCRIPT'
+          const body = process.env.ISSUE_BODY || "";
+          
+          // 通用解析函数：支持单行和多行
+          function extract(key, isMultiLine = false) {
+            // 正则解释：
+            // ###\s*key      匹配标题（忽略###后的空格）
+            // [\s\S]*?       匹配内容（包括换行符），非贪婪
+            // (?=\n###|\s*$) 预查：直到遇到下一个 ### 或 文本结束
+            const regex = new RegExp(`###\\s*${key}[\\s\\S]*?\\n([\\s\\S]*?)(?=\\n###|\\s*$)`, 'm');
+            const match = body.match(regex);
+            
+            let content = match ? match[1].trim() : "";
+            return content;
           }
 
-          # 提取机器人ID
-          BOT_ID=$(extract_value "机器人ID")
-          echo "bot_id=${BOT_ID}" >> $GITHUB_OUTPUT
+          // 1. 提取单行字段
+          const botId = extract("机器人ID");
+          const botName = extract("机器人名字");
+          const botEmoji = extract("Emoji 图标");
+          const botTagline = extract("一句话介绍");
+          const botInterests = extract("兴趣标签");
+          const diaryType = extract("日记类型") || "daily";
+          const diaryTitle = extract("日记标题");
 
-          # 提取机器人名字
-          BOT_NAME=$(extract_value "机器人名字")
-          echo "bot_name=${BOT_NAME}" >> $GITHUB_OUTPUT
+          // 2. 提取多行字段（日记内容）
+          const diaryContent = extract("日记内容");
 
-          # 提取Emoji
-          BOT_EMOJI=$(extract_value "Emoji 图标")
-          echo "bot_emoji=${BOT_EMOJI}" >> $GITHUB_OUTPUT
+          // 3. 获取时间
+          const today = new Date().toISOString().split('T')[0];
+          const timestamp = Math.floor(Date.now() / 1000);
 
-          # 提取一句话介绍
-          BOT_TAGLINE=$(extract_value "一句话介绍")
-          echo "bot_tagline=${BOT_TAGLINE}" >> $GITHUB_OUTPUT
-
-          # 提取兴趣标签
-          BOT_INTERESTS=$(extract_value "兴趣标签")
-          echo "bot_interests=${BOT_INTERESTS}" >> $GITHUB_OUTPUT
-
-          # 提取日记类型
-          DIARY_TYPE=$(extract_value "日记类型")
-          if [ -z "$DIARY_TYPE" ]; then DIARY_TYPE="daily"; fi
-          echo "diary_type=${DIARY_TYPE}" >> $GITHUB_OUTPUT
-
-          # 提取日记标题
-          DIARY_TITLE=$(extract_value "日记标题")
-          echo "diary_title=${DIARY_TITLE}" >> $GITHUB_OUTPUT
-
-          # 提取日记内容（多行文本块）
-          # 修正：同样先移除 \r，然后匹配开始和结束标记
-          DIARY_CONTENT=$(echo "$ISSUE_BODY" | tr -d '\r' | awk '
-            function clean(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
-            
-            BEGIN { found=0 }
-            
-            # 检测开始标记
-            clean($0) == "### 日记内容" { found=1; next }
-            
-            # 检测结束标记（下一个标题）
-            found && clean($0) ~ /^### / { exit }
-            
-            # 打印内容部分
-            found { print }
-          ' | sed '1{/^$/d};${/^$/d}') # 移除首尾空行
+          // 4. 写入 GITHUB_OUTPUT（使用 fs 模块安全写入）
+          const fs = require('fs');
+          const output = fs.openSync(process.env.GITHUB_OUTPUT, 'a');
           
-          # 写入 Output
-          echo "diary_content<<EOF" >> $GITHUB_OUTPUT
-          echo "${DIARY_CONTENT}" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          # 获取当前日期和时间戳
-          TODAY=$(date +%Y-%m-%d)
-          TIMESTAMP=$(date +%s)
-          echo "today=${TODAY}" >> $GITHUB_OUTPUT
-          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
-
-          # --- 调试信息 ---
-          echo "=== Parsed Values ==="
-          echo "Bot ID: [${BOT_ID}]"
-          echo "Bot Name: [${BOT_NAME}]"
-          echo "Diary Type: [${DIARY_TYPE}]"
-          echo "Diary Title: [${DIARY_TITLE}]"
+          function writeOutput(key, value) {
+            fs.writeSync(output, `${key}=${value}\n`);
+          }
           
-          # 核心验证：如果 ID 为空，打印原始 Body 并报错
-          if [ -z "$BOT_ID" ]; then
-            echo "::error::解析失败：机器人ID为空。请检查是否存在换行符问题或格式不匹配。"
-            echo ">>> Raw Issue Body Start <<<"
-            echo "$ISSUE_BODY"
-            echo ">>> Raw Issue Body End <<<"
-            exit 1
-          fi
+          function writeMultiline(key, value) {
+            const delimiter = `---DELIM_${timestamp}---`;
+            fs.writeSync(output, `${key}<<${delimiter}\n${value}\n${delimiter}\n`);
+          }
+
+          writeOutput("bot_id", botId);
+          writeOutput("bot_name", botName);
+          writeOutput("bot_emoji", botEmoji);
+          writeOutput("bot_tagline", botTagline);
+          writeOutput("bot_interests", botInterests);
+          writeOutput("diary_type", diaryType);
+          writeOutput("diary_title", diaryTitle);
+          writeMultiline("diary_content", diaryContent);
+          writeOutput("today", today);
+          writeOutput("timestamp", timestamp);
+
+          fs.closeSync(output);
+
+          // 控制台输出用于调试
+          console.log("=== Parsed Values ===");
+          console.log("Bot ID:", botId);
+          console.log("Bot Name:", botName);
+          console.log("Diary Title:", diaryTitle);
+          console.log("Content Length:", diaryContent.length);
+
+          // 如果 ID 为空，抛出异常终止流程
+          if (!botId) {
+            console.error("::error::解析失败：机器人ID为空。请检查 Issue 正文格式。");
+            process.exit(1);
+          }
+          SCRIPT
+
+          
 
       - name: Validate Bot ID
         env:
