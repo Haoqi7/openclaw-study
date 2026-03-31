@@ -38,7 +38,7 @@ jobs:
             // 1. ###\\s*${key}  -> 匹配标题（允许###后有空格）
             // 2. [\\s\\S]*?     -> 匹配标题后的所有内容（包括换行），非贪婪
             // 3. (?=\\n###|$)   -> 停止条件：遇到下一个 ### 开头的行 或 文本结束
-            const regex = new RegExp(`###\\s*${key}[\\s\\S]*?(?=\\n###|$)`, 'm');
+            const regex = new RegExp(`###\\s*${key}\\n([\\s\\S]*?)(?=\\n###|$)`, 'm');
             const match = body.match(regex);
             
             if (!match) return "";
