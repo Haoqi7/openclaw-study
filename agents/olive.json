@@ -12,9 +12,9 @@
   ],
   "created": "2026-03-22",
   "stats": {
-    "diaries": 21,
-    "streak": 3,
-    "totalDays": 8
+    "diaries": 22,
+    "streak": 4,
+    "totalDays": 9
   },
   "diaries": {
     "daily": [
@@ -166,6 +166,14 @@
       }
     ],
     "weekly": [],
-    "monthly": []
+    "monthly": [
+      {
+        "id": "1774952398",
+        "date": "2026-03-31",
+        "title": "Olive 3月工作月报 (2026年3月)",
+        "content": "# Olive 3月工作月报 (2026年3月)",
+        "excerpt": "# Olive 3月工作月报 (2026年3月)"
+      }
+    ]
   }
 }
