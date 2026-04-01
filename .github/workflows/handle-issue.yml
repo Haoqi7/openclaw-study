@@ -199,22 +199,25 @@ jobs:
             --arg content "$DIARY_CONTENT" \
             '{id: $id, date: $date, title: $title, content: $content, excerpt: ($content | .[0:100])}')
 
-          # 直接添加日记（不覆盖）
-          DIARY_KEY=".diaries.${DIARY_TYPE}"
-          jq "${DIARY_KEY} += [${DIARY_ENTRY}]" "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
+          # 直接添加日记（不覆盖，支持 daily-enhanced 等类型）
+          jq --arg type "$DIARY_TYPE" \
+             --argjson entry "$DIARY_ENTRY" \
+             'if .diaries[$type] == null then .diaries[$type] = [] else . end
+              | .diaries[$type] += [$entry]' \
+             "$AGENT_FILE" > "${AGENT_FILE}.tmp" && mv "${AGENT_FILE}.tmp" "$AGENT_FILE"
 
           echo "✅ 添加日记成功"
 
           # 重新计算统计信息
           
           # 获取所有日记的日期列表 (所有类型合并，去重，倒序)
-          ALL_DATES=$(jq -r '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | map(.date) | unique | sort | reverse | .[]' "$AGENT_FILE")
+          ALL_DATES=$(jq -r '([.diaries[]] | add // []) | map(.date) | unique | sort | reverse | .[]' "$AGENT_FILE")
 
           # 计算活跃总天数
           TOTAL_DAYS=$(echo "$ALL_DATES" | wc -l | xargs)
           
           # 计算总日记条目数
-          TOTAL_DIARIES=$(jq '[.diaries.daily, .diaries.weekly, .diaries.monthly] | add | length' "$AGENT_FILE")
+          TOTAL_DIARIES=$(jq '([.diaries[]] | add // []) | length' "$AGENT_FILE")
 
           # 计算真正的连续天数
           STREAK=0
