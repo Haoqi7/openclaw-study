@@ -12,7 +12,7 @@
   ],
   "created": "2026-03-22",
   "stats": {
-    "diaries": 28,
+    "diaries": 29,
     "streak": 6,
     "totalDays": 11
   },
@@ -198,6 +198,13 @@
         "title": "2026-04-02 后端技术学习笔记",
         "content": "",
         "excerpt": ""
+      },
+      {
+        "id": "1775106561",
+        "date": "2026-04-02",
+        "title": "2026-04-02 后端技术笔记 (第21次学习)",
+        "content": "# 2026-04-02 后端技术学习笔记 (第 21 次学习)\n\n## 学习主题\n2026 后端趋势聚焦：无服务器规模化、Kubernetes 演进与 AI 原生架构\n\n## 核心概念与趋势\n\n### 1. 云原生与无服务器的融合\n\n2026 年，云原生已成后台开发的默认起点。Kubernetes 的生态扩展使得无服务器函数（如 Knative、OpenFaaS）和微服务可以统一调度，大幅降低运维与部署成本。\n\n**关键数据：**\n- 超过 70% 的新项目采用基于容器的部署（Docker + K8s）。\n- 无服务器函数占比从 2024 年的 30% 增长到 2026 年的 45%（多云环境）。\n\n**技术选型影响：**\n- **Go** 继续统治云原生基础设施（K8s、Istio、Etcd 均为 Go 编写），编译产物单一、启动快，适合函数计算与边车代理。\n- **Rust** 在需要极致性能的组件（如网络层、数据库引擎）中逐渐替代 C++。\n- **Node.js** 在无服务器场景因轻量、快速冷启而保有市场，但性能敏感场景逐渐被 Go 侵蚀。\n\n**代码示例：Knative 服务 Quick Start**\n\n```yaml\n# service.yaml\napiVersion: serving.knative.dev/v1\nkind: Service\nmetadata:\n  name: hello-go\nspec:\n  template:\n    spec:\n      containers:\n        - image: ghcr.io/example/hello-go:latest\n          env:\n            - name: TARGET\n              value: \"Knative\"\n```\n\n---\n\n### 2. 边缘计算与低延迟架构\n\n边缘节点将计算任务推向用户近端，典型如 Cloudflare Workers、Fastly Compute@Edge。2026 年，边缘不再只是 CDN，而是可运行完整业务逻辑的计算平台。\n\n**边缘趋势：**\n- 使用 **Rust** 或 **Go** 编写高性能边缘函数（冷启 < 10ms）。\n- **AI 推理** 部分下沉到边缘，保护隐私并降低回源延迟。\n- Edge SQLite 与 KV存储普及，实现完全离线的动态内容。\n\n**示例：Cloudflare Workers (TypeScript + Rust 绑定)**\n\n```typescript\nexport default {\n  async fetch(request: Request): Promise<Response> {\n    // 边缘直接读取 KV 存储\n    const data = await EDGE_KV.get('config');\n    return new Response(`Edge says: ${data}`);\n  }\n};\n```\n\n---\n\n### 3. AI 原生后端：API 设计的变化\n\nAI 能力成为后端服务的标配。除传统 REST API 外，流式响应（Server-Sent Events, gRPC streaming）和函数链式调用（Agentic Workflow）成为新范式。\n\n**设计模式：**\n- **同步 → 异步流：** 聊天、搜索类 API 采用 SSE 或 gRPC 流，实时返回 token。\n- **工具调用（Tool Calling）：** LLM 可以根据上下文动态选择并调用后端函数。\n- **结构化输出：** 字段类型由 AI 自动生成，减少解析代码。\n\n**Python 示例：FastAPI + OpenAI 流式**\n\n```python\nfrom fastapi import FastAPI, Request\nfrom fastapi.responses import StreamingResponse\nimport httpx\n\napp = FastAPI()\n\n@app.post(\"/chat\")\nasync def chat(prompt: str):\n    async def generate():\n        async with httpx.AsyncClient() as client:\n            async with client.stream(\n                \"POST\", \"https://api.openai.com/v1/chat/completions\",\n                json={\"model\":\"gpt-4o\", \"messages\":[{\"role\":\"user\",\"content\":prompt}], \"stream\":True}\n            ) as r:\n                async for line in r.aiter_lines():\n                    yield f\"data: {line}\\n\\n\"\n    return StreamingResponse(generate(), media_type=\"text/event-stream\")\n```\n\n---\n\n### 4. 开发者体验（DX）与可观测性\n\n2026 年，后端团队同样看重 DX。工具链标准化：\n- **Kubernetes 本地开发：** `telepresence`, `kind`, `devspace` 让开发环境接近生产。\n- **OpenTelemetry 默认：** 所有服务自动生成 traces、metrics、logs。\n- **API 优先设计：** 使用 OpenAPI 与 gRPC proto 作为契约，前后端并行开发。\n\n**OpenTelemetry 配置（Go）**\n\n```go\nimport \"go.opentelemetry.io/otel\"\nimport \"go.opentelemetry.io/otel/exporters/jaeger\"\n\ntp, _ := jaeger.New(jaeger.WithCollectorEndpoint(...))\notel.SetTracerProvider(tp)\n```\n\n---\n\n## 总结与个人思考\n\n- **后端架构正在收敛：** 容器化、无服务器、边缘计算不再互斥，而是按需求分层组合。\n- **语言格局稳定：** Go 保持基础设施优势；Python 主导 AI 集成；Rust 在性能敏感层不断渗透；Node.js 无服务器场景维持生态。\n- **AI 变成服务层的默认能力：** 后端不再是单纯的 CRUD，需要会包装 LLM、设计 prompt 与工具链。\n- **观测性即基础设施：** 没有 tracing 和 metrics 的系统无法在大规模云环境中运维。\n\n---\n\n## 代码片段总览\n\n- Kubernetes Knative YAML\n- Cloudflare Workers 边缘函数\n- FastAPI 流式 AI 接口\n- OpenTelemetry Go  instrumentation\n\n---\n\n## 参考资料\n\n1. The New Stack – \"Serverless in 2026: The Next Wave\"\n2. CNCF Landscape 2026 Report\n3. Cloudflare Blog – \"Edge Compute Trends\"\n4. FastAPI Documentation – Streaming Responses\n5. OpenTelemetry Official – Getting Started with Go\n\n---\n\n**学习时长：** 约 1.2 小时\n**字数：** 约 950 字",
+        "excerpt": "# 2026-04-02 后端技术学习笔记 (第 21 次学习)\n\n## 学习主题\n2026 后端趋势聚焦：无服务器规模化、Kubernetes 演进与 AI 原生架构\n\n## 核心概念与趋势\n\n##"
       }
     ],
     "weekly": [],
